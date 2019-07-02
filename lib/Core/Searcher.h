@@ -70,6 +70,7 @@ namespace klee {
     }
 
     enum CoreSearchType {
+      Terrace,
       DFS,
       BFS,
       RandomState,
@@ -81,6 +82,25 @@ namespace klee {
       NURS_CPICnt,
       NURS_QC
     };
+  };
+
+  class TerraceSearcher : public Searcher {
+    std::vector<ExecutionState*> states;
+
+    Executor &executor;
+
+  public:
+    TerraceSearcher(Executor &_executor);
+    ~TerraceSearcher();
+
+    ExecutionState &selectState();
+    void update(ExecutionState *current,
+                const std::vector<ExecutionState *> &addedStates,
+                const std::vector<ExecutionState *> &removedStates);
+    bool empty() { return states.empty(); }
+    void printName(llvm::raw_ostream &os) {
+      os << "TerraceSearcher\n";
+    }
   };
 
   class DFSSearcher : public Searcher {
@@ -140,7 +160,7 @@ namespace klee {
     DiscretePDF<ExecutionState*> *states;
     WeightType type;
     bool updateWeights;
-    
+
     double getWeight(ExecutionState*);
 
   public:
@@ -219,7 +239,7 @@ namespace klee {
     unsigned lastStartInstructions;
 
   public:
-    BatchingSearcher(Searcher *baseSearcher, 
+    BatchingSearcher(Searcher *baseSearcher,
                      time::Span _timeBudget,
                      unsigned _instructionBudget);
     ~BatchingSearcher();

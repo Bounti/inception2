@@ -53,6 +53,49 @@ Searcher::~Searcher() {
 
 ///
 
+TerraceSearcher::TerraceSearcher(Executor &_executor)
+  : executor(_executor) {
+}
+
+TerraceSearcher::~TerraceSearcher() {
+}
+
+ExecutionState &TerraceSearcher::selectState() {
+  return *states.back();
+}
+
+void TerraceSearcher::update(ExecutionState *current,
+                         const std::vector<ExecutionState *> &addedStates,
+                         const std::vector<ExecutionState *> &removedStates) {
+  states.insert(states.end(),
+                addedStates.begin(),
+                addedStates.end());
+  for (std::vector<ExecutionState *>::const_iterator it = removedStates.begin(),
+                                                     ie = removedStates.end();
+       it != ie; ++it) {
+    ExecutionState *es = *it;
+    if (es == states.back()) {
+      states.pop_back();
+    } else {
+      bool ok = false;
+
+      for (std::vector<ExecutionState*>::iterator it = states.begin(),
+             ie = states.end(); it != ie; ++it) {
+        if (es==*it) {
+          states.erase(it);
+          ok = true;
+          break;
+        }
+      }
+
+      (void) ok;
+      assert(ok && "invalid state removed");
+    }
+  }
+}
+
+///
+
 ExecutionState &DFSSearcher::selectState() {
   return *states.back();
 }
@@ -162,7 +205,7 @@ RandomSearcher::update(ExecutionState *current,
         break;
       }
     }
-    
+
     assert(ok && "invalid state removed");
   }
 }
@@ -173,7 +216,7 @@ WeightedRandomSearcher::WeightedRandomSearcher(WeightType _type)
   : states(new DiscretePDF<ExecutionState*>()),
     type(_type) {
   switch(type) {
-  case Depth: 
+  case Depth:
     updateWeights = false;
     break;
   case InstCount:
@@ -199,7 +242,7 @@ ExecutionState &WeightedRandomSearcher::selectState() {
 double WeightedRandomSearcher::getWeight(ExecutionState *es) {
   switch(type) {
   default:
-  case Depth: 
+  case Depth:
     return es->weight;
   case InstCount: {
     uint64_t count = theStatisticManager->getIndexedValue(stats::instructions,
@@ -255,8 +298,8 @@ void WeightedRandomSearcher::update(
   }
 }
 
-bool WeightedRandomSearcher::empty() { 
-  return states->empty(); 
+bool WeightedRandomSearcher::empty() {
+  return states->empty();
 }
 
 ///
@@ -294,8 +337,8 @@ RandomPathSearcher::update(ExecutionState *current,
                            const std::vector<ExecutionState *> &removedStates) {
 }
 
-bool RandomPathSearcher::empty() { 
-  return executor.states.empty(); 
+bool RandomPathSearcher::empty() {
+  return executor.states.empty();
 }
 
 ///
@@ -338,12 +381,12 @@ ExecutionState& MergingSearcher::selectState() {
 
 BatchingSearcher::BatchingSearcher(Searcher *_baseSearcher,
                                    time::Span _timeBudget,
-                                   unsigned _instructionBudget) 
+                                   unsigned _instructionBudget)
   : baseSearcher(_baseSearcher),
     timeBudget(_timeBudget),
     instructionBudget(_instructionBudget),
     lastState(0) {
-  
+
 }
 
 BatchingSearcher::~BatchingSearcher() {
@@ -419,7 +462,7 @@ void IterativeDeepeningTimeSearcher::update(
         pausedStates.erase(it2);
         alt.erase(std::remove(alt.begin(), alt.end(), es), alt.end());
       }
-    }    
+    }
     baseSearcher->update(current, addedStates, alt);
   } else {
     baseSearcher->update(current, addedStates, removedStates);

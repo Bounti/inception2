@@ -7,6 +7,7 @@
 #
 #===------------------------------------------------------------------------===#
 add_subdirectory(Basic)
+add_subdirectory(Proto)
 add_subdirectory(Support)
 add_subdirectory(Expr)
 add_subdirectory(Solver)

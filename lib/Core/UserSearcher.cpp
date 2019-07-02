@@ -31,6 +31,7 @@ cl::list<Searcher::CoreSearchType> CoreSearch(
     cl::desc("Specify the search heuristic (default=random-path interleaved "
              "with nurs:covnew)"),
     cl::values(
+        clEnumValN(Searcher::Terrace, "trc", "use Terrace Strategy"),
         clEnumValN(Searcher::DFS, "dfs", "use Depth First Search (DFS)"),
         clEnumValN(Searcher::BFS, "bfs",
                    "use Breadth First Search (BFS), where scheduling decisions "
@@ -118,6 +119,7 @@ Searcher *getNewSearcher(Searcher::CoreSearchType type, Executor &executor) {
   case Searcher::NURS_ICnt: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::InstCount); break;
   case Searcher::NURS_CPICnt: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::CPInstCount); break;
   case Searcher::NURS_QC: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::QueryCost); break;
+  case Searcher::Terrace: searcher = new TerraceSearcher(executor); break;
   }
 
   return searcher;
@@ -126,14 +128,14 @@ Searcher *getNewSearcher(Searcher::CoreSearchType type, Executor &executor) {
 Searcher *klee::constructUserSearcher(Executor &executor) {
 
   Searcher *searcher = getNewSearcher(CoreSearch[0], executor);
-  
+
   if (CoreSearch.size() > 1) {
     std::vector<Searcher *> s;
     s.push_back(searcher);
 
     for (unsigned i=1; i<CoreSearch.size(); i++)
       s.push_back(getNewSearcher(CoreSearch[i], executor));
-    
+
     searcher = new InterleavedSearcher(s);
   }
 
