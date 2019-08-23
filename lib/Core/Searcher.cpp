@@ -338,9 +338,8 @@ bool RandomPathSearcher::empty() {
 
 ///
 
-MergingSearcher::MergingSearcher(Executor &_executor, Searcher *_baseSearcher)
-  : executor(_executor),
-  baseSearcher(_baseSearcher){}
+MergingSearcher::MergingSearcher(Searcher *_baseSearcher)
+  : baseSearcher(_baseSearcher){}
 
 MergingSearcher::~MergingSearcher() {
   delete baseSearcher;
@@ -349,8 +348,11 @@ MergingSearcher::~MergingSearcher() {
 ExecutionState& MergingSearcher::selectState() {
   assert(!baseSearcher->empty() && "base searcher is empty");
 
+  if (!UseIncompleteMerge)
+    return baseSearcher->selectState();
+
   // Iterate through all MergeHandlers
-  for (auto cur_mergehandler: executor.mergeGroups) {
+  for (auto cur_mergehandler: mergeGroups) {
     // Find one that has states that could be released
     if (!cur_mergehandler->hasMergedStates()) {
       continue;
