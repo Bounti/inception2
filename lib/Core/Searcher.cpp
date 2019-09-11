@@ -307,8 +307,8 @@ RandomPathSearcher::~RandomPathSearcher() {
 
 ExecutionState &RandomPathSearcher::selectState() {
   unsigned flips=0, bits=0;
-  PTree::Node *n = executor.processTree->root;
-  while (!n->data) {
+  PTreeNode *n = executor.processTree->root;
+  while (!n->state) {
     if (!n->left) {
       n = n->right;
     } else if (!n->right) {
@@ -323,7 +323,7 @@ ExecutionState &RandomPathSearcher::selectState() {
     }
   }
 
-  return *n->data;
+  return *n->state;
 }
 
 void
