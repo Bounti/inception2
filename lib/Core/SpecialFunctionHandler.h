@@ -15,8 +15,6 @@
 #include <vector>
 #include <string>
 
-#include <proto/tmr_parser.hpp>
-
 namespace llvm {
   class Function;
 }
@@ -70,14 +68,8 @@ namespace klee {
     static const_iterator end();
     static int size();
 
-    TMRParser* tmr_parser;
-
   public:
     SpecialFunctionHandler(Executor &_executor);
-
-    bool terrace_memory_is_symbolic(unsigned int expected_address);
-
-    uint32_t terrace_memory_get_concrete();
 
     /// Perform any modifications on the LLVM module before it is
     /// prepared for execution. At the moment this involves deleting
@@ -153,22 +145,6 @@ namespace klee {
     HANDLER(handleSubOverflow);
     HANDLER(handleDivRemOverflow);
 
-    HANDLER(handle_helper_ret_ldub_mmu_panda);
-    HANDLER(handle_helper_le_lduw_mmu_panda);
-    HANDLER(handle_helper_le_ldul_mmu_panda);
-    HANDLER(handle_helper_le_ldq_mmu_panda);
-    HANDLER(handle_helper_be_lduw_mmu_panda);
-    HANDLER(handle_helper_be_ldul_mmu_panda);
-    HANDLER(handle_helper_be_ldq_mmu_panda);
-    HANDLER(handle_helper_ret_stb_mmu_panda);
-    HANDLER(handle_helper_le_stw_mmu_panda);
-    HANDLER(handle_helper_le_stl_mmu_panda);
-    HANDLER(handle_helper_le_stq_mmu_panda);
-    HANDLER(handle_helper_be_stw_mmu_panda);
-    HANDLER(handle_helper_be_stl_mmu_panda);
-    HANDLER(handle_helper_be_stq_mmu_panda);
-    HANDLER(handle_panda_load);
-    HANDLER(handle_panda_store);
 
 #undef HANDLER
   };

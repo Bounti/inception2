@@ -52,5 +52,4 @@ target_link_libraries(kleeCore PRIVATE
   kleaverSolver
   kleaverExpr
   kleeSupport
-  kleeProto
 )
