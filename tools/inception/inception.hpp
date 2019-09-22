@@ -52,6 +52,8 @@
 
 #include "klee/Internal/Module/LLVMPassManager.h"
 
+#include "inception_executor.hpp"
+
 using namespace llvm;
 using namespace klee;
 
@@ -72,7 +74,7 @@ public:
     // Create a new KleeHandler
     handler = new KleeHandler(pArgc, pArgv, bc_file_name);
     // Create the Executor
-    interpreter = Interpreter::create(ctx, IOpts, handler);
+    interpreter = new InceptionExecutor(ctx, IOpts, handler);
 
     handler->setInterpreter(interpreter);
   };

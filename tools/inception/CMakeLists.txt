@@ -14,9 +14,9 @@ add_executable(inception
   inception.cc
   inception_executor.cc
   klee-handler.cpp
-  DummyObjectFile.cpp
-  FunctionsHelperWriter.cpp
-  IRMerger.cpp
+  utils/dummy_object_file.cpp
+  helper_functions/functions_helper_writer.cpp
+  passes/ir_merger.cpp
 )
 
 set(KLEE_LIBS

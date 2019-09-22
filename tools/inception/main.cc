@@ -34,6 +34,11 @@ hasDebugger("has-debugger",
           cl::init(false),
           cl::desc("is the Inception debugger attached (default=false)"));
 
+cl::opt<bool>
+inspectIR("inspect-ir",
+          cl::init(false),
+          cl::desc("inspect lifted IR functions (default=false)"));
+
 //cl::opt<std::string> irq_hook_table_file("irq_hook_table_file", cl::desc("<irq hook table file>"));
 
 static void parseArguments(int argc, char **argv) {
@@ -72,6 +77,11 @@ int main(int argc, char **argv) {
 
   // 4. Run Inception Passes to lower assembly and binary dependencies in LLVM IR
   inception->runPasses();
+
+  // is interactive mode asked ?
+  if( inspectIR ) {
+    
+  } 
 
   inception->load_configuration(argv);
 

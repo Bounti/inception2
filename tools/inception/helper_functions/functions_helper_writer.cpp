@@ -22,7 +22,7 @@
     Author: Giovanni Camurati <giovanni.camurati@eurecom.fr>
 */
 
-#include "FunctionsHelperWriter.h"
+#include "functions_helper_writer.h"
 
 #include "inception/Utils/Builder.h"
 #include "inception/Utils/IContext.h"

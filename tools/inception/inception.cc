@@ -7,13 +7,14 @@
 
 #include "inception/CodeInv/Decompiler.h"
 #include "inception/CodeInv/Disassembler.h"
-#include "IRMerger.h"
+#include "passes/ir_merger.h"
 
-#include "CollisionSolver.h"
-#include "FunctionsHelperWriter.h"
-#include "InterruptSupport.h"
-#include "SectionsWriter.h"
-#include "StackAllocator.h"
+#include "utils/collision_solver.h"
+#include "helper_functions/functions_helper_writer.h"
+#include "utils/interrupt_support.h"
+#include "utils/sections_writer.h"
+#include "utils/stack_allocator.h"
+
 #include "inception/Transforms/BreakConstantGEP.h"
 #include "inception/Transforms/BreakConstantPtrToInt.h"
 #include "inception/Utils/Builder.h"
@@ -187,14 +188,14 @@ void Inception::runPasses() {
 
   klee::klee_message("Adding call to functions helper...");
   Function *main = mainModule->getFunction("main");
-  FunctionsHelperWriter::Write(NONE, WRITEBACK_SP, mainModule, main);
-  FunctionsHelperWriter::Write(NONE, CACHE_SP, mainModule, main);
-  FunctionsHelperWriter::Write(NONE, SWITCH_SP, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, WRITEBACK_SP, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, CACHE_SP, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, SWITCH_SP, mainModule, main);
 
-  FunctionsHelperWriter::Write(NONE, INTERRUPT_PROLOGUE, mainModule, main);
-  FunctionsHelperWriter::Write(NONE, INTERRUPT_EPILOGUE, mainModule, main);
-  FunctionsHelperWriter::Write(NONE, INTERRUPT_HANDLER, mainModule, main);
-  FunctionsHelperWriter::Write(NONE, ICP, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_PROLOGUE, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_EPILOGUE, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_HANDLER, mainModule, main);
+  FunctionsHelperWriter::Write(FHW_POSITION::NONE, ICP, mainModule, main);
   klee::klee_message("Done\n");
 }
 
@@ -205,6 +206,13 @@ void Inception::run() {
 
   char **pArgv = new char *[1];
   pArgv[0] = NULL;
+
+  if( main_fct == NULL ) {
+    // get entry point from ELF symbols table
+
+    // otherwise get main
+    main_fct = mainModule->getFunction("main");
+  }
 
   interpreter->runFunctionAsMain(main_fct, 1, pArgv, pEnvp);
 }

@@ -22,9 +22,9 @@
     Author: Giovanni Camurati <giovanni.camurati@eurecom.fr>
 */
 
-#include "IRMerger.h"
+#include "ir_merger.h"
 
-#include "FunctionCleaner.h"
+#include "function_cleaner.h"
 #include "inception/Utils/ABIAdapter.h"
 #include "inception/Utils/Builder.h"
 #include "inception/Utils/IContext.h"

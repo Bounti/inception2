@@ -18,7 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "DummyObjectFile.h"
+#include "dummy_object_file.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/SmallVector.h"
 
