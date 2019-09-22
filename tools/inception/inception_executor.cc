@@ -55,8 +55,34 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
+void InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
+                                           bool isReadOnly, bool isSymbolic,
+                                           bool isRandomized, bool isForwarded) {
+
+  klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
+  
+  auto mo = memory->allocateFixed(addr, size, nullptr);
+
+  mo->setName(name);
+  //mo->isSymbolic = isSymbolic;
+  //mo->isRandomized = isRandomized;
+  //mo->isForwarded = isForwarded;
+  
+  ObjectState *os = bindObjectInState(*init_state, mo, false);
+  if(isReadOnly)
+    os->setReadOnly(true);
+
+  if( isRandomized )
+    os->initializeToRandom();
+  else if( isSymbolic )
+    executeMakeSymbolic(*init_state, mo, name);
+  else if( isForwarded )
+    os->initializeToZero();
+  else 
+    os->initializeToZero();
+}
+
 void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *ki) {
-  klee_message("Hook in execute instruction");
 
   Instruction *i = ki->inst;
   switch (i->getOpcode()) {
@@ -93,14 +119,14 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
     // If the symbol has external weak linkage then it is implicitly
     // not defined in this module; if it isn't resolvable then it
     // should be null.
-    if (f->hasExternalWeakLinkage() && 
+    if (f->hasExternalWeakLinkage() &&
         !externalDispatcher->resolveSymbol(f->getName())) {
       addr = Expr::createPointer(0);
     } else {
       addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
       legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
     }
-    
+
     globalAddresses.insert(std::make_pair(f, addr));
   }
 
@@ -124,12 +150,12 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
   addExternalObject(state, const_cast<uint16_t*>(*addr-128),
                     384 * sizeof **addr, true);
   addExternalObject(state, addr, sizeof(*addr), true);
-    
+
   const int32_t **lower_addr = __ctype_tolower_loc();
   addExternalObject(state, const_cast<int32_t*>(*lower_addr-128),
                     384 * sizeof **lower_addr, true);
   addExternalObject(state, lower_addr, sizeof(*lower_addr), true);
-  
+
   const int32_t **upper_addr = __ctype_toupper_loc();
   addExternalObject(state, const_cast<int32_t*>(*upper_addr-128),
                     384 * sizeof **upper_addr, true);
@@ -195,7 +221,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
           addr = externalDispatcher->resolveSymbol(i->getName());
         }
         if (!addr)
-          klee_error("unable to load symbol(%s) while initializing globals.", 
+          klee_error("unable to load symbol(%s) while initializing globals.",
                      i->getName().data());
 
         for (unsigned offset=0; offset<mo->size; offset++)
@@ -217,7 +243,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
           os->initializeToRandom();
     }
   }
-  
+
   // link aliases to their definitions (if bound)
   for (auto i = m->alias_begin(), ie = m->alias_end(); i != ie; ++i) {
     // Map the alias to its aliasee's address. This works because we have
@@ -244,7 +270,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       const ObjectState *os = state.addressSpace.findObject(mo);
       assert(os);
       ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-      
+
       initializeGlobalObject(state, wos, i->getInitializer(), 0);
       // if(i->isConstant()) os->setReadOnly(true);
     }
@@ -257,7 +283,7 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
                                       ref<Expr> value /* undef if read */,
                                       KInstruction *target /* undef if write */) {
 
-  Expr::Width type = (isWrite ? value->getWidth() : 
+  Expr::Width type = (isWrite ? value->getWidth() :
                      getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
@@ -275,7 +301,7 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
 
   if (success) {
     const MemoryObject *mo = op.first;
- 
+
     ref<Expr> offset = mo->getOffsetExpr(address);
     ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes);
     check = optimizer.optimizeExpr(check, true);
@@ -299,42 +325,42 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
-        }          
+        }
       } else {
         ref<Expr> result = os->read(offset, type);
-        
+
         if (interpreterOpts.MakeConcreteSymbolic)
           result = replaceReadWithSymbolic(state, result);
-        
+
         bindLocal(target, state, result);
       }
 
       return;
     }
-  } 
+  }
 
   // we are on an error path (no resolution, multiple resolution, one
   // resolution with out of bounds)
 
   address = optimizer.optimizeExpr(address, true);
-  ResolutionList rl;  
+  ResolutionList rl;
   solver->setTimeout(coreSolverTimeout);
   bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(time::Span());
-  
+
   // XXX there is some query wasteage here. who cares?
   ExecutionState *unbound = &state;
-  
+
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
     const MemoryObject *mo = i->first;
     const ObjectState *os = i->second;
     ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
-    
+
     StatePair branches = fork(*unbound, inBounds, true);
     ExecutionState *bound = branches.first;
 
-    // bound can be 0 on failure or overlapped 
+    // bound can be 0 on failure or overlapped
     if (bound) {
       if (isWrite) {
         if (os->readOnly) {
@@ -354,7 +380,7 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
     if (!unbound)
       break;
   }
-  
+
   // XXX should we distinguish out of bounds and overlapped cases?
   if (unbound) {
     if (incomplete) {
@@ -406,16 +432,19 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   doDumpStates();
 }
 
-void InceptionExecutor::runFunctionAsMain(Function *f,
+void InceptionExecutor::initFunctionAsMain(Function *f,
 				 int argc,
 				 char **argv,
 				 char **envp) {
+
+  klee_message("inception module enabled");
+
   std::vector<ref<Expr> > arguments;
 
   // force deterministic initialization of memory objects
   srand(1);
   srandom(1);
-  
+
   MemoryObject *argvMO = 0;
 
   // In order to make uclibc happy and be closer to what the system is
@@ -454,23 +483,23 @@ void InceptionExecutor::runFunctionAsMain(Function *f,
     }
   }
 
-  ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
-  
-  if (pathWriter) 
-    state->pathOS = pathWriter->open();
-  if (symPathWriter) 
-    state->symPathOS = symPathWriter->open();
+  init_state = new ExecutionState(kmodule->functionMap[f]);
+
+  if (pathWriter)
+    init_state->pathOS = pathWriter->open();
+  if (symPathWriter)
+    init_state->symPathOS = symPathWriter->open();
 
 
   if (statsTracker)
-    statsTracker->framePushed(*state, 0);
+    statsTracker->framePushed(*init_state, 0);
 
   assert(arguments.size() == f->arg_size() && "wrong number of arguments");
   for (unsigned i = 0, e = f->arg_size(); i != e; ++i)
-    bindArgument(kf, i, *state, arguments[i]);
+    bindArgument(kf, i, *init_state, arguments[i]);
 
   if (argvMO) {
-    ObjectState *argvOS = bindObjectInState(*state, argvMO, false);
+    ObjectState *argvOS = bindObjectInState(*init_state, argvMO, false);
 
     for (int i=0; i<argc+1+envc+1+1; i++) {
       if (i==argc || i>=argc+1+envc) {
@@ -482,10 +511,10 @@ void InceptionExecutor::runFunctionAsMain(Function *f,
 
         MemoryObject *arg =
             memory->allocate(len + 1, /*isLocal=*/false, /*isGlobal=*/true,
-                             /*allocSite=*/state->pc->inst, /*alignment=*/8);
+                             /*allocSite=*/init_state->pc->inst, /*alignment=*/8);
         if (!arg)
           klee_error("Could not allocate memory for function arguments");
-        ObjectState *os = bindObjectInState(*state, arg, false);
+        ObjectState *os = bindObjectInState(*init_state, arg, false);
         for (j=0; j<len+1; j++)
           os->write8(j, s[j]);
 
@@ -494,12 +523,14 @@ void InceptionExecutor::runFunctionAsMain(Function *f,
       }
     }
   }
-  
-  initializeGlobals(*state);
 
-  processTree = new PTree(state);
-  state->ptreeNode = processTree->root;
-  run(*state);
+  initializeGlobals(*init_state);
+}
+
+void InceptionExecutor::start_analysis() {
+  processTree = new PTree(init_state);
+  init_state->ptreeNode = processTree->root;
+  run(*init_state);
   delete processTree;
   processTree = 0;
 

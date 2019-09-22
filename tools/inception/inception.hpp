@@ -69,7 +69,7 @@ public:
     IOpts.MakeConcreteSymbolic = false;
 
     // Create empty arguments for KleeHandler
-    auto pArgc = 1;
+    auto pArgc = 0;
     auto pArgv = new char *[pArgc];
     // Create a new KleeHandler
     handler = new KleeHandler(pArgc, pArgv, bc_file_name);
@@ -104,8 +104,8 @@ public:
   // Load ELF binary
   void load_elf_binary_from_file(const char* _elf_file_name);
 
-  // Load IRQ Hooks Table from file
-  void load_irq_hook_table_from_file(const char* _irq_hook_itable_file_name);
+  // Load memory configuration from file
+  void load_mem_conf_from_file(const char* _mem_conf_file_name);
 
   // We set the entry point and start execution
   void set_main_function_by_address(unsigned int address){};
@@ -131,6 +131,10 @@ public:
 
   void runPasses();
 
+  void prepare();
+
+  void start_analysis();
+
 private:
   bool record_time;
 
@@ -138,7 +142,7 @@ private:
 
   LLVMContext ctx;
 
-  Interpreter *interpreter;
+  InceptionExecutor *interpreter;
 
   KleeHandler *handler;
 

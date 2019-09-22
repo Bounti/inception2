@@ -5,22 +5,22 @@
 #include <iostream>
 #include <string>
 
-#include "inception/CodeInv/Decompiler.h"
-#include "inception/CodeInv/Disassembler.h"
-#include "passes/ir_merger.h"
-
-#include "utils/collision_solver.h"
-#include "helper_functions/functions_helper_writer.h"
-#include "utils/interrupt_support.h"
-#include "utils/sections_writer.h"
-#include "utils/stack_allocator.h"
-
-#include "inception/Transforms/BreakConstantGEP.h"
-#include "inception/Transforms/BreakConstantPtrToInt.h"
-#include "inception/Utils/Builder.h"
 #include "klee/Internal/Support/ErrorHandling.h"
+#include <jsoncpp/json/json.h>
 
 using namespace llvm;
+
+uint32_t to_hexa(std::string str) {
+  std::stringstream ss;
+  uint32_t res;
+
+  ss << std::hex << str;
+  ss >> res;
+  ss.clear();
+
+  return res;
+}
+
 
 // Load ELF binary
 void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
@@ -44,11 +44,100 @@ void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
       TempExecutable.swap(ret.get());
     }
   }
+
+  uint64_t addr, size;
+  StringRef name;
+  std::error_code ec;
+
+  for (object::symbol_iterator I = TempExecutable->symbols().begin(),
+                               E = TempExecutable->symbols().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if ((ec = I->getAddress(addr))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if ((ec = I->getSize(size))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+    interpreter->addCustomObject(name, addr, size, false, false, false, false);
+  }
+
+  for (object::section_iterator I = TempExecutable->sections().begin(),
+                                E = TempExecutable->sections().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    addr = I->getAddress();
+
+    size = I->getSize();
+
+    interpreter->addCustomObject(name, addr, size, false, false, false, false);
+  }
+
+
 }
 
-// Load IRQ Hooks Table from file
-void Inception::load_irq_hook_table_from_file(const char* _irq_hook_itable_file_name) {
+// Load memory configuration from file
+void Inception::load_mem_conf_from_file(const char* _mem_conf_file_name) {
 
+  if (_mem_conf_file_name != "-" && !sys::fs::exists(_mem_conf_file_name)) {
+    klee::klee_error("unable to load memory configuration : %s ", _mem_conf_file_name);
+  }
+
+  std::ifstream config_file(_mem_conf_file_name, std::ifstream::binary);
+
+  if (config_file) {
+
+    // Load json in memory
+    Json::Value* json = new Json::Value();
+
+    config_file >> (*json);
+
+    // Parse expected configuration
+    auto mem_section = ((*json)["memory_model"]);
+
+    auto it = mem_section.begin();
+    auto limit = mem_section.end();
+
+    for(; it!=limit ;it++) {
+      bool is_symbolic   = false;
+      bool is_forwarded  = false;
+      bool is_randomized = false;
+
+      std::string name         = it->get("name", "").asString();
+      unsigned int base        = to_hexa(it->get("base", "0").asString());
+      unsigned int size        = to_hexa(it->get("size", "0").asString());
+      bool is_read_only        = it->get("read_only", false).asBool();
+      std::string destination = it->get("destination", "").asString();
+
+      std::string strategy = it->get("strategy", "concrete").asString();
+
+      //Parse strategy
+      if(strategy.compare("symbolic") == 0) {
+        is_symbolic = true;
+      } else if(strategy.compare("randomized") == 0) {
+        is_randomized = true;
+      } else if(strategy.compare("forwarded") == 0) {
+        is_forwarded = true;
+      }
+
+      interpreter->addCustomObject(name, base, size, is_read_only, is_symbolic, is_randomized, is_forwarded);
+    }
+  } else {
+    klee::klee_error("unable to read configuration file %s", _mem_conf_file_name);
+  }
 }
 
 void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
@@ -81,125 +170,9 @@ void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
 
 void Inception::runPasses() {
 
-  // The primary goal of this function is to replace LLVM functions containing ASM lines
-  InitializeAllTargetInfos();
-  InitializeAllTargetMCs();
-  InitializeAllAsmParsers();
-  InitializeAllDisassemblers();
-  InitializeAllTargets();
-
-  MCDirector *MCD = 0;
-  Disassembler *DAS = 0;
-  Decompiler *DEC = 0;
-
-  // Initialize the Disassembler
-  std::string FeaturesStr;
-  SubtargetFeatures Features;
-  FeaturesStr = Features.getString();
-
-  Triple TT("thumbv7m-unknown-none-elf");
-
-  mainModule->materializeAll();
-
-  MCD = new MCDirector(TT.str(), "cortex-m3", FeaturesStr, TargetOptions(),
-                       Reloc::DynamicNoPIC, CodeModel::Default,
-                       CodeGenOpt::Default, outs(), errs());
-  DAS = new Disassembler(MCD, TempExecutable.release(), NULL, outs(), outs());
-  DEC = new Decompiler(DAS, mainModule, outs(), outs());
-
-  if (!MCD->isValid()) {
-    errs() << "Warning: Unable to initialized LLVM MC API!\n";
-    return;
-  }
-
-  std::set<std::string> asm_functions;
-  klee::klee_message("\n");
-
-  klee::klee_message("Detecting all assembly functions ...");
-  for (auto iter1 = mainModule->getFunctionList().begin();
-       iter1 != mainModule->getFunctionList().end(); iter1++) {
-    Function &old_function = *iter1;
-
-    FunctionPassManager FPM(mainModule);
-    FPM.add(llvm::createBreakConstantGEPPass());
-    FPM.add(llvm::createBreakConstantPtrToIntPass());
-    FPM.run(old_function);
-
-    for (auto iter2 = old_function.getBasicBlockList().begin();
-         iter2 != old_function.getBasicBlockList().end(); iter2++) {
-      BasicBlock &old_bb = *iter2;
-      for (auto iter3 = old_bb.begin(); iter3 != old_bb.end(); iter3++) {
-        const CallInst *ci = dyn_cast<CallInst>(iter3);
-
-        if (ci != NULL)
-          if (isa<InlineAsm>(ci->getCalledValue())) {
-            asm_functions.insert(old_function.getName().str());
-          }
-      }  // END FOR INSTRUCTIOn
-    }    // END FOR BB
-  }      // END FOR FCT
-  klee::klee_message("Done -> %ld functions.\n", asm_functions.size());
-
-  initAPI(mainModule, DEC);
-
-  IRMerger *merger = new IRMerger(DEC);
-
-  for (auto &str : asm_functions) {
-    klee::klee_message("Processing function %s...", str.c_str());
-    merger->Run(llvm::StringRef(str));
-    klee::klee_message("Done\n");
-  }
-  klee::klee_message("Decompilation stage done\n");
-
-  // Remove all
-  asm_functions.clear();
-
-  klee::klee_message("Checking functions dependencies");
-  auto fct_begin = mainModule->getFunctionList().begin();
-  auto fct_end = mainModule->getFunctionList().end();
-
-  bool hasDependencies = false;
-  do {
-    for (; fct_begin != fct_end; fct_begin++) {
-      Function &function = *fct_begin;
-
-      if (function.hasFnAttribute("DecompileLater")) {
-        hasDependencies = true;
-        klee::klee_message("Processing function %s...",
-                          function.getName().str().c_str());
-        merger->Run(llvm::StringRef(function.getName().str()));
-        klee::klee_message("Done\n");
-      }
-    }  // END FOR FCT
-    hasDependencies = false;
-  } while (hasDependencies);
-
-  klee::klee_message("Allocating and initializing virtual stack...");
-  StackAllocator::Allocate(mainModule, DAS);
-  StackAllocator::InitSP(mainModule, DAS);
-  klee::klee_message("Done\n");
-
-  klee::klee_message("Importing sections ...");
-  SectionsWriter::WriteSection(".heap", DAS, mainModule);
-  SectionsWriter::WriteSection(".main_stack", DAS, mainModule);
-  SectionsWriter::WriteSection(".isr_vector", DAS, mainModule);
-  SectionsWriter::WriteSection(".interrupt_vector", DAS, mainModule);
-  klee::klee_message("Done\n");
-
-  klee::klee_message("Adding call to functions helper...");
-  Function *main = mainModule->getFunction("main");
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, WRITEBACK_SP, mainModule, main);
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, CACHE_SP, mainModule, main);
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, SWITCH_SP, mainModule, main);
-
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_PROLOGUE, mainModule, main);
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_EPILOGUE, mainModule, main);
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, INTERRUPT_HANDLER, mainModule, main);
-  FunctionsHelperWriter::Write(FHW_POSITION::NONE, ICP, mainModule, main);
-  klee::klee_message("Done\n");
 }
 
-void Inception::run() {
+void Inception::prepare() {
 
   char **pEnvp = new char *[1];
   pEnvp[0] = NULL;
@@ -214,5 +187,10 @@ void Inception::run() {
     main_fct = mainModule->getFunction("main");
   }
 
-  interpreter->runFunctionAsMain(main_fct, 1, pArgv, pEnvp);
+  interpreter->initFunctionAsMain(main_fct, 0, pArgv, pEnvp);
+}
+
+void Inception::start_analysis() {
+
+  interpreter->start_analysis();
 }

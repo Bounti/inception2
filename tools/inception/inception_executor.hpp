@@ -17,13 +17,21 @@ namespace klee {
 class InceptionExecutor : public Executor{
   public:
 
+  ExecutionState *init_state; 
+
+  void addCustomObject(std::string name, std::uint64_t addr, unsigned size, 
+                        bool isReadOnly, bool isSymbolic,
+                        bool isRandomized, bool isForwarded);
+
+  void start_analysis();
+
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
   void initializeGlobals(ExecutionState &state);
 
   void run(ExecutionState &initialState);
 
-  void runFunctionAsMain(Function *f,
+  void initFunctionAsMain(Function *f,
 				 int argc,
 				 char **argv,
 				 char **envp);
