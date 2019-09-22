@@ -19,6 +19,8 @@ class InceptionExecutor : public Executor{
 
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
+  void initializeGlobals(ExecutionState &state);
+
   void run(ExecutionState &initialState);
 
   void runFunctionAsMain(Function *f,

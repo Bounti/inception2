@@ -118,7 +118,7 @@ public:
     Unhandled
   };
 
-private:
+protected:
   static const char *TerminateReasonNames[];
 
   class TimerInfo;
