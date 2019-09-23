@@ -137,6 +137,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__ubsan_handle_mul_overflow", handleMulOverflow, false),
   add("__ubsan_handle_divrem_overflow", handleDivRemOverflow, false),
 
+  add("inception_dump_registers", handleInceptionDumpRegisters, false),
 #undef addDNR
 #undef add
 };
@@ -906,4 +907,10 @@ bool SpecialFunctionHandler::is_bounded(ExecutionState &state,
   }
 
   return true;
+}
+
+void SpecialFunctionHandler::handleInceptionDumpRegisters(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  return;
 }

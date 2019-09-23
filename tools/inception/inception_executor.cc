@@ -46,6 +46,7 @@
 #include "klee/util/ExprUtil.h"
 #include "klee/util/GetElementPtrTypeIterator.h"
 
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 
@@ -55,19 +56,70 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
-void InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
+object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
+  uint64_t addr, size;
+  StringRef name;
+  std::error_code ec;
+
+  for (object::symbol_iterator I = elf->symbols().begin(),
+                               E = elf->symbols().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if( name.equals(expected_name) ) {
+      *success = true;
+      return *I;
+    }
+
+    //addCustomObject(name, addr, size, false, false, false, false);
+  }
+  *success = false;
+  return object::SymbolRef();
+}
+
+object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string expected_name, bool *success) {
+  StringRef name;
+  std::error_code ec;
+
+  for (object::section_iterator I = elf->sections().begin(),
+                                E = elf->sections().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if( name.equals(expected_name) ) {
+      *success = true;
+      return *I;
+    }
+
+    //addCustomObject(name, addr, size, false, false, false, false);
+  }
+  *success = false;
+  return object::SectionRef();
+}
+
+
+MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
                                            bool isReadOnly, bool isSymbolic,
-                                           bool isRandomized, bool isForwarded) {
+                                           bool isRandomized, bool isForwarded, const llvm::Value* allocSite) {
 
   klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
-  
-  auto mo = memory->allocateFixed(addr, size, nullptr);
+
+  auto mo = memory->allocateFixed(addr, size, allocSite);
 
   mo->setName(name);
+  mo->isUserSpecified = true;
   //mo->isSymbolic = isSymbolic;
   //mo->isRandomized = isRandomized;
   //mo->isForwarded = isForwarded;
-  
+
   ObjectState *os = bindObjectInState(*init_state, mo, false);
   if(isReadOnly)
     os->setReadOnly(true);
@@ -76,10 +128,14 @@ void InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, un
     os->initializeToRandom();
   else if( isSymbolic )
     executeMakeSymbolic(*init_state, mo, name);
-  else if( isForwarded )
+  else if( isForwarded ) {
     os->initializeToZero();
-  else 
+    forwarded_mem.insert(std::make_pair(addr, size)); 
+  }
+  else
     os->initializeToZero();
+
+  return mo;
 }
 
 void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *ki) {
@@ -95,6 +151,119 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
       ref<Expr> base = eval(ki, 1, state).value;
       ref<Expr> value = eval(ki, 0, state).value;
       executeMemoryOperation(state, true, base, value, 0);
+      break;
+    }
+    case Instruction::Invoke:
+    case Instruction::Call: {
+      // Ignore debug intrinsic calls
+      if (isa<DbgInfoIntrinsic>(i))
+        break;
+      CallSite cs(i);
+
+      unsigned numArgs = cs.arg_size();
+      Value *fp = cs.getCalledValue();
+      Function *f = getTargetFunction(fp, state);
+
+      // Skip debug intrinsics, we can't evaluate their metadata arguments.
+      if (isa<DbgInfoIntrinsic>(i))
+        break;
+
+      if (isa<InlineAsm>(fp)) {
+        terminateStateOnExecError(state, "inline assembly is unsupported");
+        break;
+      }
+      // evaluate arguments
+      std::vector< ref<Expr> > arguments;
+      arguments.reserve(numArgs);
+
+      for (unsigned j=0; j<numArgs; ++j)
+        arguments.push_back(eval(ki, j+1, state).value);
+
+      if (f) {
+        const FunctionType *fType =
+          dyn_cast<FunctionType>(cast<PointerType>(f->getType())->getElementType());
+        const FunctionType *fpType =
+          dyn_cast<FunctionType>(cast<PointerType>(fp->getType())->getElementType());
+
+        // special case the call with a bitcast case
+        if (fType != fpType) {
+          assert(fType && fpType && "unable to get function type");
+
+          // XXX check result coercion
+
+          // XXX this really needs thought and validation
+          unsigned i=0;
+          for (std::vector< ref<Expr> >::iterator
+                 ai = arguments.begin(), ie = arguments.end();
+               ai != ie; ++ai) {
+            Expr::Width to, from = (*ai)->getWidth();
+
+            if (i<fType->getNumParams()) {
+              to = getWidthForLLVMType(fType->getParamType(i));
+
+              if (from != to) {
+                // XXX need to check other param attrs ?
+  #if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+                bool isSExt = cs.paramHasAttr(i, llvm::Attribute::SExt);
+  #else
+                bool isSExt = cs.paramHasAttr(i+1, llvm::Attribute::SExt);
+  #endif
+                if (isSExt) {
+                  arguments[i] = SExtExpr::create(arguments[i], to);
+                } else {
+                  arguments[i] = ZExtExpr::create(arguments[i], to);
+                }
+              }
+            }
+
+            i++;
+          }
+        }
+
+        executeCall(state, ki, f, arguments);
+      } else {
+        ref<Expr> v = eval(ki, 0, state).value;
+
+        ExecutionState *free = &state;
+        bool hasInvalid = false, first = true;
+
+        /* XXX This is wasteful, no need to do a full evaluate since we
+           have already got a value. But in the end the caches should
+           handle it for us, albeit with some overhead. */
+        do {
+          v = optimizer.optimizeExpr(v, true);
+          ref<ConstantExpr> value;
+          bool success = solver->getValue(*free, v, value);
+          assert(success && "FIXME: Unhandled solver failure");
+          (void) success;
+          StatePair res = fork(*free, EqExpr::create(v, value), true);
+          if (res.first) {
+            uint64_t addr = value->getZExtValue();
+            std::map<uint64_t, Function *>::iterator seek = inceptionLegalFunctions.find(addr);
+            if (seek != inceptionLegalFunctions.end()) {
+              f = seek->second;
+//            if (legalFunctions.count(addr)) {
+              //f = (Function*) addr;
+              
+              // Don't give warning on unique resolution
+              if (res.second || !first)
+                klee_warning_once(reinterpret_cast<void*>(addr),
+                                  "resolved symbolic function pointer to: %s",
+                                  f->getName().data());
+
+              executeCall(*res.first, ki, f, arguments);
+            } else {
+              if (!hasInvalid) {
+                terminateStateOnExecError(state, "invalid function pointer");
+                hasInvalid = true;
+              }
+            }
+          }
+
+          first = false;
+          free = res.second;
+        } while (free);
+      }
       break;
     }
     default:
@@ -116,6 +285,8 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
     Function *f = &*i;
     ref<ConstantExpr> addr(0);
 
+    uint64_t device_address, device_size;
+
     // If the symbol has external weak linkage then it is implicitly
     // not defined in this module; if it isn't resolvable then it
     // should be null.
@@ -123,8 +294,28 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
         !externalDispatcher->resolveSymbol(f->getName())) {
       addr = Expr::createPointer(0);
     } else {
-      addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
-      legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
+      //addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
+      //legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
+      std::error_code ec;
+
+      bool success = false;
+      auto symbol = resolve_elf_symbol_by_name(f->getName(), &success);
+
+
+      if(success) {
+        if ((ec = symbol.getAddress(device_address))) {
+          klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+        } else {
+          success = true;
+          klee_message("mapping function %s to device address %016lx", f->getName().str().c_str(), device_address);
+        } 
+      } else {
+        device_address = reinterpret_cast<std::uint64_t>(f); 
+      }
+
+      // Create a 32bits pointer
+      addr = Expr::createPointer((unsigned long)device_address);
+      inceptionLegalFunctions.insert(std::make_pair(device_address, f));
     }
 
     globalAddresses.insert(std::make_pair(f, addr));
@@ -230,9 +421,36 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
     } else {
       Type *ty = i->getType()->getElementType();
       uint64_t size = kmodule->targetData->getTypeStoreSize(ty);
-      MemoryObject *mo = memory->allocate(size, /*isLocal=*/false,
+      MemoryObject* mo;
+
+      //XXX: Inception Unified Memory
+      // When symbols are available, we force the allocation of globals to device address
+      std::error_code ec;
+      bool success = false;
+      auto symbol = resolve_elf_symbol_by_name(v->getName(), &success);
+      uint64_t device_address;
+
+      if(success) {
+        if ((ec = symbol.getAddress(device_address))) {
+          klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+        } else {
+          success = true;
+          klee_message("mapping object %s to device address %016lx", v->getName().str().c_str(), device_address);
+        } 
+      }
+
+      if( success ){
+        mo = addCustomObject(v->getName(), device_address, size,
+                                           /*isReadOnly*/false, /*isSymbolic*/false,
+                                           /*isRandomized*/false, /*isForwarded*/false, v);
+      } else {
+        mo = memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/true, /*allocSite=*/v,
                                           /*alignment=*/globalObjectAlignment);
+        klee_message("object %s to address %016lx", v->getName().str().c_str(), mo->address);
+
+      } 
+
       if (!mo)
         llvm::report_fatal_error("out of memory");
       ObjectState *os = bindObjectInState(state, mo, false);
@@ -394,6 +612,82 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
   //klee_message("ExecutorMemoryOperation !");
   //Executor::executeMemoryOperation(state, isWrite, address, value, target);
 }
+
+void InceptionExecutor::serve_pending_interrupt() {
+  // Return immediately if we do not have to serve interrupts (if any of the
+  // following conditions is true. The order is chose for efficiency
+  if (!enabled) // interrupts are disabled
+    return;
+  if (pending_irq.empty()) // no interrupt is pending
+    return;
+  if (interrupted) // already serving an interrupt
+    return;
+
+  // get the current execution state
+  ExecutionState *current = executor->getExecutionState();
+
+  // get the caller i.e. who is being interrupted
+  caller = current->pc->inst->getParent()->getParent();
+
+  // return if the caller is one klee or inception function that should be
+  // atomic
+  if (caller->getName().find("klee_") != std::string::npos ||
+      caller->getName().find("inception_") != std::string::npos)
+    return;
+
+  // find the pc and update the PC reg
+  klee::ref<klee::Expr> PC = executor->getPCAddress();
+  int current_id = current->stack.getSelectedThreadID();
+  klee_warning("[InterruptController] updating pc to current id %d",
+               current_id);
+  klee::ref<klee::Expr> ID =
+      klee::ConstantExpr::create(current_id, Expr::Int32);
+
+  executor->writeAt(*current, PC, ID);
+
+  // get the pending interrupt
+  current_interrupt = pending_irq.front();
+  pending_irq.pop();
+
+  klee_message("[InterruptController] Suspending %s to execute "
+               "inception_interrupt_handler",
+               caller->getName().str().c_str());
+
+  // push a stack frame, saying that the caller is current->pc, see IMPORTANT
+  // NOTE for the reason
+  current->pushFrame(current->pc, k_irq_fct);
+
+  // the generic handler takes as parameter the address of the interrupt
+  // vector location in which to look for the handler address
+  uint32_t vector_address = resolve_irq_address();
+
+  klee::ref<klee::Expr> Vector_address =
+      klee::ConstantExpr::create(vector_address, Expr::Int32);
+
+  klee::ref<klee::Expr> Handler_address =
+      executor->readAt(*current, Vector_address);
+
+  klee::ConstantExpr *handler_address_ce =
+      dyn_cast<klee::ConstantExpr>(Handler_address);
+
+  uint32_t handler_address = handler_address_ce->getZExtValue();
+
+  klee_message(
+      "[InterruptController] Resolving handler address: vector(%d) = %d",
+      vector_address, handler_address);
+
+  Cell &argumentCell =
+      current->stack.back().locals[k_irq_fct->getArgRegister(0)];
+  argumentCell.value = Handler_address;
+
+  // finally "call" the handler by setting the pc to point to it
+  current->pc = k_irq_fct->instructions;
+
+  // flag to mark the interrupted state
+  // it is useful in the current version to forbid nested interrupts
+  interrupted = true;
+}
+
 
 /*
  * Overriding the run method, enables Inception to force the execution of interrupt when one is pending.

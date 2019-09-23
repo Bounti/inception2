@@ -66,18 +66,22 @@ int main(int argc, char **argv) {
   /*
    * This main is a refacto of the original klee code
    */
+  // 1. We init Inception
+  Inception *inception = new Inception();
 
   if( has_debugger ) {
     io = new device(0x04B4, 0x00F1, 0);
 
     io->init();
-  }
 
-  // 1. We init Inception
-  Inception *inception = new Inception();
+    inception->add_target(io);
+  }
 
   // 2. We load the bitfile
   inception->load_llvm_bitcode_from_file(bitcode_file.c_str());
+
+  // 3. Load ELF binary
+  inception->load_elf_binary_from_file(elf_file.c_str());
 
   // 4. Run Inception Passes to lower assembly and binary dependencies in LLVM IR
   inception->runPasses();
@@ -89,12 +93,6 @@ int main(int argc, char **argv) {
 
   inception->prepare();
  
-  // TODO: prepare has to be called before loading elf and mem conf!
-  // In fact, the interpreter has to create the first execution state before 
-  // So that we can modify the memory model of this initial statel
-
-  // 3. Load ELF binary
-  inception->load_elf_binary_from_file(elf_file.c_str());
   
   // 4. Load memory configuration from file
   inception->load_mem_conf_from_file(mem_conf_file.c_str());

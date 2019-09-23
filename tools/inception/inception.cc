@@ -25,6 +25,8 @@ uint32_t to_hexa(std::string str) {
 // Load ELF binary
 void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
 
+  std::unique_ptr<object::ObjectFile> TempExecutable;
+
   // File should be stdin or it should exist.
   if (_elf_file_name != "-" && !sys::fs::exists(_elf_file_name)) {
     klee::klee_error("Unable to locate ELF file or directory : %s ", _elf_file_name);
@@ -45,48 +47,7 @@ void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
     }
   }
 
-  uint64_t addr, size;
-  StringRef name;
-  std::error_code ec;
-
-  for (object::symbol_iterator I = TempExecutable->symbols().begin(),
-                               E = TempExecutable->symbols().end();
-       I != E; ++I) {
-
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-
-    if ((ec = I->getAddress(addr))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-
-    if ((ec = I->getSize(size))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-    interpreter->addCustomObject(name, addr, size, false, false, false, false);
-  }
-
-  for (object::section_iterator I = TempExecutable->sections().begin(),
-                                E = TempExecutable->sections().end();
-       I != E; ++I) {
-
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-
-    addr = I->getAddress();
-
-    size = I->getSize();
-
-    interpreter->addCustomObject(name, addr, size, false, false, false, false);
-  }
-
-
+  interpreter->set_elf(TempExecutable);
 }
 
 // Load memory configuration from file
@@ -166,7 +127,7 @@ void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
   mainModule = M.release();
 
   // mainModule->print(llvm::errs(), nullptr);
-};
+}
 
 void Inception::runPasses() {
 

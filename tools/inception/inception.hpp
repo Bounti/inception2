@@ -153,8 +153,6 @@ private:
   bool interrupted = false;
 
   std::string bc_file_name;
-
-  std::unique_ptr<object::ObjectFile> TempExecutable;
 };
 
 #endif
