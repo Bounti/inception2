@@ -34,6 +34,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "klee/Expr.h"
+
+using namespace klee;
 
 class device {
 public:
@@ -48,11 +51,19 @@ public:
 
   void set_timeout(unsigned int _timeout) { timeout = _timeout; }
 
+  void write(uint32_t address, uint32_t data);
+
+  uint32_t read(uint32_t address);
+
+  void write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::Width w);
+
+  klee::ref<Expr> read(klee::ref<Expr>  address, klee::Expr::Width w);
+
+private:
   void send(uint8_t *data, uint32_t size);
 
   void receive(uint8_t *data, uint32_t size);
-
-private:
+  
   void device_open();
 
   void device_close();

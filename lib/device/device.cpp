@@ -246,3 +246,55 @@ void device::receive(uint8_t *data, uint32_t size) {
   //}
   //cout << termcolor::green << "JTAG < " << info.str() << endl;
 }
+
+void write(uint32_t address, uint32_t data) {
+
+  uint8_t* buffer = new uint8_t[12];
+
+  uint32_t cmd = 0x14000001;
+
+  buffer[0] = (cmd >> 24);
+  buffer[1] = (cmd >> 16);
+  buffer[2] = (cmd >> 8);
+  buffer[3] = (cmd & 0xFF);
+
+  buffer[4] = (address >> 24);
+  buffer[5] = (address >> 16);
+  buffer[6] = (address >> 8);
+  buffer[7] = (address & 0xFF);
+
+  buffer[8] = (data >> 24);
+  buffer[9] = (data >> 16);
+  buffer[10] = (data >> 8);
+  buffer[11] = (data & 0xFF);
+
+  send(buffer, 12);
+
+  //cmd->push_back((uint32_t) 0x24000001);
+  //cmd->push_back((uint32_t) address);
+}
+
+void read(uint32_t address) {
+  
+  uint8_t* data = new uint8_t[8];
+
+  uint32_t cmd = 0x24000001;
+
+  buffer[0] = (cmd >> 24);
+  buffer[1] = (cmd >> 16);
+  buffer[2] = (cmd >> 8);
+  buffer[3] = (cmd & 0xFF);
+
+  buffer[4] = (address >> 24);
+  buffer[5] = (address >> 16);
+  buffer[6] = (address >> 8);
+  buffer[7] = (address & 0xFF);
+ 
+  send(buffer, 8);
+  
+  //cmd->push_back((uint32_t) 0x14000001);
+  //cmd->push_back((uint32_t) address);
+  //cmd->push_back((uint32_t) data);
+}
+
+

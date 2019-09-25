@@ -7,9 +7,11 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Object/ObjectFile.h"
+#include "device/device.hpp"
 
 #include <string>
 #include <vector>
+#include <set>
 
 using namespace llvm;
 
@@ -31,9 +33,15 @@ class InceptionExecutor : public Executor{
 
   object::SectionRef resolve_elf_section_by_name(std::string expected_name, bool* success);
 
-  std::map<uint64_t, size> forwarded_mem; 
+  std::set<uint64_t> forwarded_mem; 
+
+  device* io;
 
   public: 
+
+  void add_target(device* _device){
+    io = _device;
+  }
 
   void set_elf(std::unique_ptr<object::ObjectFile>& _elf) {
     elf = std::move(_elf);
@@ -59,7 +67,9 @@ class InceptionExecutor : public Executor{
 				 char **envp);
 
   InceptionExecutor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
-      InterpreterHandler *ie) : Executor(ctx, opts, ie){};
+      InterpreterHandler *ie) : Executor(ctx, opts, ie){
+    io = NULL;
+  };
 
 	void executeMemoryOperation(ExecutionState &state,
                                       bool isWrite,

@@ -6,11 +6,13 @@
 # License. See LICENSE.TXT for details.
 #
 #===------------------------------------------------------------------------===#
-add_subdirectory(Basic)
-add_subdirectory(Support)
-add_subdirectory(Expr)
-add_subdirectory(Solver)
-add_subdirectory(Module)
-add_subdirectory(Core)
-add_subdirectory(Inception)
-add_subdirectory(Device)
+klee_add_component(Device
+  device.cpp
+)
+
+# TODO: Work out what the correct LLVM components are for
+# kleeCore.
+set(LLVM_COMPONENTS
+)
+
+target_link_libraries(Device PUBLIC usb-1.0)

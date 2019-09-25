@@ -14,16 +14,12 @@ add_executable(inception
   inception.cc
   inception_executor.cc
   klee-handler.cpp
-  device.cpp
 )
 
 set(KLEE_LIBS
   kleeCore
   kleeModule
-  CodeInv
-  Target
-  Transforms
-  Utils
+  Device
 )
 
 set(LLVM_COMPONENTS

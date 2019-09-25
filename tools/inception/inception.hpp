@@ -49,6 +49,7 @@
 #include <sstream>
 
 #include "klee-handler.hpp"
+#include "device/device.hpp"
 
 #include "klee/Internal/Module/LLVMPassManager.h"
 
@@ -80,6 +81,10 @@ public:
   };
 
   ~Inception() { shutdown(); };
+
+  void add_target(device* _device){
+    interpreter->add_target(_device);
+  }
 
   void load_configuration(char **argv) {
 

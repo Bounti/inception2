@@ -129,8 +129,11 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
   else if( isSymbolic )
     executeMakeSymbolic(*init_state, mo, name);
   else if( isForwarded ) {
+    if( io == NULL )
+      klee_error("unsupported forwarding strategy when no debugger are attached (--has_debugger)");
+    
     os->initializeToZero();
-    forwarded_mem.insert(std::make_pair(addr, size)); 
+    forwarded_mem.insert(addr); 
   }
   else
     os->initializeToZero();
@@ -543,14 +546,26 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
+
+          if( forwarded_mem.count(mo->address) > 0 ) {
+            io->write(address, value, type); 
+          } 
         }
       } else {
-        ref<Expr> result = os->read(offset, type);
 
-        if (interpreterOpts.MakeConcreteSymbolic)
-          result = replaceReadWithSymbolic(state, result);
+        if( forwarded_mem.count(mo->address) > 0 ) {
+          ref<Expr> result = io->read(address, type);
 
-        bindLocal(target, state, result);
+          bindLocal(target, state, result);
+        } else {
+          ref<Expr> result = os->read(offset, type);
+
+          if (interpreterOpts.MakeConcreteSymbolic)
+            result = replaceReadWithSymbolic(state, result);
+          
+          bindLocal(target, state, result);
+        } 
+
       }
 
       return;
@@ -613,80 +628,80 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
   //Executor::executeMemoryOperation(state, isWrite, address, value, target);
 }
 
-void InceptionExecutor::serve_pending_interrupt() {
-  // Return immediately if we do not have to serve interrupts (if any of the
-  // following conditions is true. The order is chose for efficiency
-  if (!enabled) // interrupts are disabled
-    return;
-  if (pending_irq.empty()) // no interrupt is pending
-    return;
-  if (interrupted) // already serving an interrupt
-    return;
-
-  // get the current execution state
-  ExecutionState *current = executor->getExecutionState();
-
-  // get the caller i.e. who is being interrupted
-  caller = current->pc->inst->getParent()->getParent();
-
-  // return if the caller is one klee or inception function that should be
-  // atomic
-  if (caller->getName().find("klee_") != std::string::npos ||
-      caller->getName().find("inception_") != std::string::npos)
-    return;
-
-  // find the pc and update the PC reg
-  klee::ref<klee::Expr> PC = executor->getPCAddress();
-  int current_id = current->stack.getSelectedThreadID();
-  klee_warning("[InterruptController] updating pc to current id %d",
-               current_id);
-  klee::ref<klee::Expr> ID =
-      klee::ConstantExpr::create(current_id, Expr::Int32);
-
-  executor->writeAt(*current, PC, ID);
-
-  // get the pending interrupt
-  current_interrupt = pending_irq.front();
-  pending_irq.pop();
-
-  klee_message("[InterruptController] Suspending %s to execute "
-               "inception_interrupt_handler",
-               caller->getName().str().c_str());
-
-  // push a stack frame, saying that the caller is current->pc, see IMPORTANT
-  // NOTE for the reason
-  current->pushFrame(current->pc, k_irq_fct);
-
-  // the generic handler takes as parameter the address of the interrupt
-  // vector location in which to look for the handler address
-  uint32_t vector_address = resolve_irq_address();
-
-  klee::ref<klee::Expr> Vector_address =
-      klee::ConstantExpr::create(vector_address, Expr::Int32);
-
-  klee::ref<klee::Expr> Handler_address =
-      executor->readAt(*current, Vector_address);
-
-  klee::ConstantExpr *handler_address_ce =
-      dyn_cast<klee::ConstantExpr>(Handler_address);
-
-  uint32_t handler_address = handler_address_ce->getZExtValue();
-
-  klee_message(
-      "[InterruptController] Resolving handler address: vector(%d) = %d",
-      vector_address, handler_address);
-
-  Cell &argumentCell =
-      current->stack.back().locals[k_irq_fct->getArgRegister(0)];
-  argumentCell.value = Handler_address;
-
-  // finally "call" the handler by setting the pc to point to it
-  current->pc = k_irq_fct->instructions;
-
-  // flag to mark the interrupted state
-  // it is useful in the current version to forbid nested interrupts
-  interrupted = true;
-}
+//void InceptionExecutor::serve_pending_interrupt() {
+//  // Return immediately if we do not have to serve interrupts (if any of the
+//  // following conditions is true. The order is chose for efficiency
+//  if (!enabled) // interrupts are disabled
+//    return;
+//  if (pending_irq.empty()) // no interrupt is pending
+//    return;
+//  if (interrupted) // already serving an interrupt
+//    return;
+//
+//  // get the current execution state
+//  ExecutionState *current = executor->getExecutionState();
+//
+//  // get the caller i.e. who is being interrupted
+//  caller = current->pc->inst->getParent()->getParent();
+//
+//  // return if the caller is one klee or inception function that should be
+//  // atomic
+//  if (caller->getName().find("klee_") != std::string::npos ||
+//      caller->getName().find("inception_") != std::string::npos)
+//    return;
+//
+//  // find the pc and update the PC reg
+//  klee::ref<klee::Expr> PC = executor->getPCAddress();
+//  int current_id = current->stack.getSelectedThreadID();
+//  klee_warning("[InterruptController] updating pc to current id %d",
+//               current_id);
+//  klee::ref<klee::Expr> ID =
+//      klee::ConstantExpr::create(current_id, Expr::Int32);
+//
+//  executor->writeAt(*current, PC, ID);
+//
+//  // get the pending interrupt
+//  current_interrupt = pending_irq.front();
+//  pending_irq.pop();
+//
+//  klee_message("[InterruptController] Suspending %s to execute "
+//               "inception_interrupt_handler",
+//               caller->getName().str().c_str());
+//
+//  // push a stack frame, saying that the caller is current->pc, see IMPORTANT
+//  // NOTE for the reason
+//  current->pushFrame(current->pc, k_irq_fct);
+//
+//  // the generic handler takes as parameter the address of the interrupt
+//  // vector location in which to look for the handler address
+//  uint32_t vector_address = resolve_irq_address();
+//
+//  klee::ref<klee::Expr> Vector_address =
+//      klee::ConstantExpr::create(vector_address, Expr::Int32);
+//
+//  klee::ref<klee::Expr> Handler_address =
+//      executor->readAt(*current, Vector_address);
+//
+//  klee::ConstantExpr *handler_address_ce =
+//      dyn_cast<klee::ConstantExpr>(Handler_address);
+//
+//  uint32_t handler_address = handler_address_ce->getZExtValue();
+//
+//  klee_message(
+//      "[InterruptController] Resolving handler address: vector(%d) = %d",
+//      vector_address, handler_address);
+//
+//  Cell &argumentCell =
+//      current->stack.back().locals[k_irq_fct->getArgRegister(0)];
+//  argumentCell.value = Handler_address;
+//
+//  // finally "call" the handler by setting the pc to point to it
+//  current->pc = k_irq_fct->instructions;
+//
+//  // flag to mark the interrupted state
+//  // it is useful in the current version to forbid nested interrupts
+//  interrupted = true;
+//}
 
 
 /*

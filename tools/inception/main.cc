@@ -19,7 +19,7 @@ using namespace std;
 
 #include "inception.hpp"
 
-#include "device.hpp"
+#include "device/device.hpp"
 
 /*
  * Arguments specific to Inception
