@@ -1316,8 +1316,8 @@ void Executor::printDebugInstructions(ExecutionState &state) {
 
 void Executor::stepInstruction(ExecutionState &state) {
   printDebugInstructions(state);
-  if (statsTracker)
-    statsTracker->stepInstruction(state);
+  //if (statsTracker)
+  //  statsTracker->stepInstruction(state);
 
   ++stats::instructions;
   ++state.steppedInstructions;
