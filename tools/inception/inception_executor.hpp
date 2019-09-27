@@ -12,10 +12,16 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <thread>
+#include <map>
 
 using namespace llvm;
 
 namespace klee {
+
+class InceptionExecutor;
+
+void irq_handler(device* io_irq, InceptionExecutor* executor);
 
 class InceptionExecutor : public Executor{
   private:
@@ -26,21 +32,54 @@ class InceptionExecutor : public Executor{
 
   std::unique_ptr<object::ObjectFile> elf;
   //object::ObjectFile* elf;
-  
-  ExecutionState *init_state; 
+
+  ExecutionState *init_state;
 
   object::SymbolRef resolve_elf_symbol_by_name(std::string expected_name, bool* success);
 
   object::SectionRef resolve_elf_section_by_name(std::string expected_name, bool* success);
 
-  std::set<uint64_t> forwarded_mem; 
+  std::set<uint64_t> forwarded_mem;
 
   device* io;
 
-  public: 
+  device* io_irq;
 
-  void add_target(device* _device){
-    io = _device;
+  std::stack<uint32_t> pending_interrupts;
+
+  std::map<ExecutionState*, Function*> interrupted_states;
+
+  void serve_pending_interrupt(ExecutionState* state);
+
+  ref<Expr> readAt(ExecutionState &state, ref<Expr> address) const;
+
+  uint64_t min_irq_threshold;
+  
+  uint64_t instructions_counter;
+
+  std::map<uint32_t, uint32_t> irq_model;
+  
+  public:
+
+  void set_min_irq_threshold(uint64_t _min_irq_threshold) {
+    min_irq_threshold = _min_irq_threshold; 
+  }
+
+  void push_irq(uint32_t id) {
+    pending_interrupts.push(id);
+  }
+
+  void add_irq_to_model(uint32_t irq_id, uint32_t frequency) {
+    irq_model.insert(std::pair<uint32_t, uint32_t>(irq_id, frequency));
+  }
+
+  void add_target(device* io_device, device* irq_device){
+    io     = io_device;
+    io_irq = irq_device;
+
+    std::thread irq_handler_thread (irq_handler, io_irq, this);
+    irq_handler_thread.detach();
+
   }
 
   void set_elf(std::unique_ptr<object::ObjectFile>& _elf) {
@@ -49,7 +88,7 @@ class InceptionExecutor : public Executor{
 
   void allocate_device_memory();
 
-  MemoryObject* addCustomObject(std::string name, std::uint64_t addr, unsigned size, 
+  MemoryObject* addCustomObject(std::string name, std::uint64_t addr, unsigned size,
                         bool isReadOnly, bool isSymbolic,
                         bool isRandomized, bool isForwarded, const llvm::Value* allocSite = nullptr);
 
@@ -69,6 +108,8 @@ class InceptionExecutor : public Executor{
   InceptionExecutor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
       InterpreterHandler *ie) : Executor(ctx, opts, ie){
     io = NULL;
+    io_irq = NULL;
+    min_irq_threshold = 0;
   };
 
 	void executeMemoryOperation(ExecutionState &state,

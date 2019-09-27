@@ -56,6 +56,36 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
+void irq_handler(device* io_irq, InceptionExecutor* executor) {
+
+  while(1) {
+    
+    uint8_t buffer[8] = {0};
+    uint32_t value=0;
+    uint32_t error_code;
+
+    io_irq->receive(buffer, 8);
+
+    error_code |= buffer[0] << 24;
+    error_code |= buffer[1] << 16;
+    error_code |= buffer[2] << 8;
+    error_code |= buffer[3];
+
+    value |= buffer[4] << 24;
+    value |= buffer[5] << 16;
+    value |= buffer[6] << 8;
+    value |= buffer[7];
+
+    //printf("[Trace] Interrupt error_code : %08x\n", error_code); 
+
+    if(value != 0) {
+      executor->push_irq(value); 
+      printf("[Trace] Interrupt ID : %08x\n", value); 
+    }
+  }
+}
+
+
 object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
   uint64_t addr, size;
   StringRef name;
@@ -141,6 +171,12 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
   return mo;
 }
 
+/*
+ * Overwrite load, store, call and ret 
+ * 'load' and 'store' has to call our own executeMemoryOperation so that wa can catch forwarded requests
+ * 'call' has a custom logic to support functions pointer. This is part of the unified memory
+ * 'ret' has to check if we are returning from an interrupt handler, if it is the case  
+*/
 void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
   Instruction *i = ki->inst;
@@ -269,6 +305,84 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
       }
       break;
     }
+  case Instruction::Ret: {
+    ReturnInst *ri = cast<ReturnInst>(i);
+    KInstIterator kcaller = state.stack.back().caller;
+    Instruction *caller = kcaller ? kcaller->inst : 0;
+    bool isVoidReturn = (ri->getNumOperands() == 0);
+    ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
+
+    bool interrupted = false;
+    if( interrupted_states.count(&state) != 0 ) {
+
+      std::map<ExecutionState*,Function*>::iterator it;
+      it = interrupted_states.find(&state);
+      if(it != interrupted_states.end() && it->second == caller->getParent()->getParent()) {
+        interrupted_states.erase(it);
+        interrupted = true;
+      }
+    }
+
+
+    if (!isVoidReturn) {
+      result = eval(ki, 0, state).value;
+    }
+    
+    if (state.stack.size() <= 1) {
+      assert(!caller && "caller set on initial stack frame");
+      terminateStateOnExit(state);
+    } else {
+      state.popFrame();
+
+      if (statsTracker)
+        statsTracker->framePopped(state);
+
+      if (InvokeInst *ii = dyn_cast<InvokeInst>(caller)) {
+        transferToBasicBlock(ii->getNormalDest(), caller->getParent(), state);
+      } else {
+        state.pc = kcaller;
+        if(!interrupted)
+          ++state.pc;
+      }
+
+      if (!isVoidReturn) {
+        Type *t = caller->getType();
+        if (t != Type::getVoidTy(i->getContext())) {
+          // may need to do coercion due to bitcasts
+          Expr::Width from = result->getWidth();
+          Expr::Width to = getWidthForLLVMType(t);
+            
+          if (from != to) {
+            CallSite cs = (isa<InvokeInst>(caller) ? CallSite(cast<InvokeInst>(caller)) : 
+                           CallSite(cast<CallInst>(caller)));
+
+            // XXX need to check other param attrs ?
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+            bool isSExt = cs.hasRetAttr(llvm::Attribute::SExt);
+#else
+            bool isSExt = cs.paramHasAttr(0, llvm::Attribute::SExt);
+#endif
+            if (isSExt) {
+              result = SExtExpr::create(result, to);
+            } else {
+              result = ZExtExpr::create(result, to);
+            }
+          }
+
+          bindLocal(kcaller, state, result);
+        }
+      } else {
+        // We check that the return value has no users instead of
+        // checking the type, since C defaults to returning int for
+        // undeclared functions.
+        if (!caller->use_empty() && !interrupted) {
+          terminateStateOnExecError(state, "return void when caller expected a result");
+        }
+
+      }
+    }      
+    break;
+  }
     default:
      Executor::executeInstruction(state, ki);
     break;
@@ -548,6 +662,7 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
           wos->write(offset, value);
 
           if( forwarded_mem.count(mo->address) > 0 ) {
+
             io->write(address, value, type); 
           } 
         }
@@ -602,10 +717,21 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(mo->getOffsetExpr(address), value);
+          if( forwarded_mem.count(mo->address) > 0 ) {
+
+            io->write(address, value, type); 
+          } 
         }
       } else {
-        ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
-        bindLocal(target, *bound, result);
+
+        if( forwarded_mem.count(mo->address) > 0 ) {
+          ref<Expr> result = io->read(address, type);
+
+          bindLocal(target, state, result);
+        } else {
+          ref<Expr> result = os->read(mo->getOffsetExpr(address), type);
+          bindLocal(target, *bound, result);
+        }
       }
     }
 
@@ -628,81 +754,89 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
   //Executor::executeMemoryOperation(state, isWrite, address, value, target);
 }
 
-//void InceptionExecutor::serve_pending_interrupt() {
-//  // Return immediately if we do not have to serve interrupts (if any of the
-//  // following conditions is true. The order is chose for efficiency
-//  if (!enabled) // interrupts are disabled
-//    return;
-//  if (pending_irq.empty()) // no interrupt is pending
-//    return;
-//  if (interrupted) // already serving an interrupt
-//    return;
-//
-//  // get the current execution state
-//  ExecutionState *current = executor->getExecutionState();
-//
-//  // get the caller i.e. who is being interrupted
-//  caller = current->pc->inst->getParent()->getParent();
-//
-//  // return if the caller is one klee or inception function that should be
-//  // atomic
-//  if (caller->getName().find("klee_") != std::string::npos ||
-//      caller->getName().find("inception_") != std::string::npos)
-//    return;
-//
-//  // find the pc and update the PC reg
-//  klee::ref<klee::Expr> PC = executor->getPCAddress();
-//  int current_id = current->stack.getSelectedThreadID();
-//  klee_warning("[InterruptController] updating pc to current id %d",
-//               current_id);
-//  klee::ref<klee::Expr> ID =
-//      klee::ConstantExpr::create(current_id, Expr::Int32);
-//
-//  executor->writeAt(*current, PC, ID);
-//
-//  // get the pending interrupt
-//  current_interrupt = pending_irq.front();
-//  pending_irq.pop();
-//
-//  klee_message("[InterruptController] Suspending %s to execute "
-//               "inception_interrupt_handler",
-//               caller->getName().str().c_str());
-//
-//  // push a stack frame, saying that the caller is current->pc, see IMPORTANT
-//  // NOTE for the reason
-//  current->pushFrame(current->pc, k_irq_fct);
-//
-//  // the generic handler takes as parameter the address of the interrupt
-//  // vector location in which to look for the handler address
-//  uint32_t vector_address = resolve_irq_address();
-//
-//  klee::ref<klee::Expr> Vector_address =
-//      klee::ConstantExpr::create(vector_address, Expr::Int32);
-//
-//  klee::ref<klee::Expr> Handler_address =
-//      executor->readAt(*current, Vector_address);
-//
-//  klee::ConstantExpr *handler_address_ce =
-//      dyn_cast<klee::ConstantExpr>(Handler_address);
-//
-//  uint32_t handler_address = handler_address_ce->getZExtValue();
-//
-//  klee_message(
-//      "[InterruptController] Resolving handler address: vector(%d) = %d",
-//      vector_address, handler_address);
-//
-//  Cell &argumentCell =
-//      current->stack.back().locals[k_irq_fct->getArgRegister(0)];
-//  argumentCell.value = Handler_address;
-//
-//  // finally "call" the handler by setting the pc to point to it
-//  current->pc = k_irq_fct->instructions;
-//
-//  // flag to mark the interrupted state
-//  // it is useful in the current version to forbid nested interrupts
-//  interrupted = true;
-//}
+void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
+  // Return immediately if we do not have to serve interrupts (if any of the
+  // following conditions is true. The order is chose for efficiency
+  if (pending_interrupts.empty()) // no interrupt is pending
+    return;
 
+  Function* caller = current->pc->inst->getParent()->getParent();
+
+  interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller)); 
+  
+  // return if the caller is one klee or inception function that should be
+  // atomic
+  if (caller->getName().find("klee_") != std::string::npos ||
+      caller->getName().find("inception_") != std::string::npos)
+    return;
+
+  // get the pending interrupt
+  uint32_t current_interrupt = pending_interrupts.top();
+  pending_interrupts.pop();
+
+  klee_message("[InterruptController] Suspending %s to execute "
+               "inception_interrupt_handler",
+               caller->getName().str().c_str());
+
+  Function *f_interrupt = kmodule->module->getFunction("inception_interrupt_handler");
+
+  KFunction *kf = kmodule->functionMap[f_interrupt];
+
+  // push a stack frame, saying that the caller is current->pc, see IMPORTANT
+  // NOTE for the reason
+  current->pushFrame(current->pc, kf);
+
+  // the generic handler takes as parameter the address of the interrupt
+  // vector location in which to look for the handler address
+ {
+    // the generic handler takes as parameter the address of the interrupt
+    // vector location in which to look for the handler address
+    uint32_t vector_address = 0x10000000 + (current_interrupt << 2);
+
+    klee::ref<klee::Expr> Vector_address =
+        klee::ConstantExpr::create(vector_address, Expr::Int32);
+    klee::ref<klee::Expr> Handler_address = readAt(*current, Vector_address);
+
+    klee::ConstantExpr *handler_address_ce =
+        dyn_cast<klee::ConstantExpr>(Handler_address);
+    uint32_t handler_address = handler_address_ce->getZExtValue();
+
+    klee_message("resolving handler address: vector(%p) = %p", vector_address,
+                 handler_address);
+
+    Cell &argumentCell = current->stack.back().locals[kf->getArgRegister(0)];
+    argumentCell.value = Handler_address;
+  }
+
+
+  // finally "call" the handler by setting the pc to point to it
+  current->pc = kf->instructions;
+}
+
+ ref<Expr> InceptionExecutor::readAt(ExecutionState &state, ref<Expr> address) const {
+ 
+   ObjectPair op;
+   bool success;
+ 
+   solver->setTimeout(coreSolverTimeout);
+ 
+   state.addressSpace.resolveOne(state, solver, address, op, success);
+ 
+   if (success) {
+ 
+     const MemoryObject *mo = op.first;
+ 
+     ref<Expr> addr = mo->getOffsetExpr(address);
+ 
+     const ObjectState *os = state.addressSpace.findObject(mo);
+     assert(os);
+ 
+     ref<Expr> result = os->read(addr, Expr::Int32);
+  
+     return result;
+   } else
+     return klee::ConstantExpr::create(-1, Expr::Int32);
+ }
 
 /*
  * Overriding the run method, enables Inception to force the execution of interrupt when one is pending.
@@ -722,17 +856,32 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
+  instructions_counter = 0;
+
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
+
+    if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
+      for (std::map<uint32_t,uint32_t>::iterator it=irq_model.begin(); it!=irq_model.end(); ++it) {
+
+        if((instructions_counter % it->second) == 0) {
+          // We use the interrupt stack to keep compatibility with real device interrupt controller
+          push_irq(it->first);
+          serve_pending_interrupt(&state);
+        } 
+      }
+          
+    }
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
     executeInstruction(state, ki);
-    processTimers(&state, maxInstructionTime);
+    //processTimers(&state, maxInstructionTime);
 
     checkMemoryUsage();
 
     updateStates(&state);
+    instructions_counter++;
   }
 
   delete searcher;

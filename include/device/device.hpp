@@ -49,6 +49,10 @@ public:
 
   void close();
 
+  void accept_timeout() {
+    timeout_is_error = false;
+  }
+
   void set_timeout(unsigned int _timeout) { timeout = _timeout; }
 
   void write(uint32_t address, uint32_t data);
@@ -58,11 +62,12 @@ public:
   void write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::Width w);
 
   klee::ref<Expr> read(klee::ref<Expr>  address, klee::Expr::Width w);
-
-private:
+  
   void send(uint8_t *data, uint32_t size);
 
   void receive(uint8_t *data, uint32_t size);
+
+private:
   
   void device_open();
 
@@ -101,6 +106,8 @@ private:
   unsigned int timeout;
 
   static bool initialized;
+  
+  bool timeout_is_error;
 };
 
 #endif /* device_hpp */

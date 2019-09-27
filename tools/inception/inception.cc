@@ -10,6 +10,12 @@
 
 using namespace llvm;
 
+cl::opt<int>
+min_irq_threshold("min_irq_threshold",
+          cl::init(100),
+          cl::desc("set minimal number of lines to reach before rising irq (default=100)"));
+
+
 uint32_t to_hexa(std::string str) {
   std::stringstream ss;
   uint32_t res;
@@ -49,6 +55,44 @@ void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
 
   interpreter->set_elf(TempExecutable);
 }
+
+// Load interrupt configuration from file
+void Inception::load_interrupt_conf_from_file(const char* _interrupt_conf_file_name) {
+
+  if (_interrupt_conf_file_name != "-" && !sys::fs::exists(_interrupt_conf_file_name)) {
+    klee::klee_error("unable to load memory configuration : %s ", _interrupt_conf_file_name);
+  }
+
+  std::ifstream config_file(_interrupt_conf_file_name, std::ifstream::binary);
+
+  interpreter->set_min_irq_threshold(min_irq_threshold);
+
+  if (config_file) {
+
+    // Load json in memory
+    Json::Value* json = new Json::Value();
+
+    config_file >> (*json);
+
+    // Parse expected configuration
+    auto irq_section = ((*json)["interrupt_model"]);
+
+    auto it = irq_section.begin();
+    auto limit = irq_section.end();
+
+    for(; it!=limit ;it++) {
+
+      unsigned int irq_id      = it->get("id", 0).asInt();
+      unsigned int frequency   = it->get("frequency", 0).asInt();
+
+      if(irq_id != 0 && frequency != 0)
+        interpreter->add_irq_to_model(irq_id, frequency);
+    }
+  } else {
+    klee::klee_error("unable to read configuration file %s", _interrupt_conf_file_name);
+  }
+}
+
 
 // Load memory configuration from file
 void Inception::load_mem_conf_from_file(const char* _mem_conf_file_name) {

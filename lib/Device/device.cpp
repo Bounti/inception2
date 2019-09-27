@@ -45,6 +45,8 @@ device::device(uint16_t p_vid, uint16_t p_pid, uint32_t p_interface,
 
   timeout = 500;
 
+  timeout_is_error = true;
+
   entrypoint_download = out;
   entrypoint_upload = in;
 
@@ -173,7 +175,8 @@ uint32_t device::io(uint8_t endpoint, uint8_t *buffer, uint32_t size) {
                                      &transferred, timeout)) != 0) {
     switch (retval) {
     case LIBUSB_ERROR_TIMEOUT:
-      klee_error("JTAG debugger: timeout error");
+      if(timeout_is_error) 
+        klee_error("JTAG debugger: timeout error");
       break;
     case LIBUSB_ERROR_PIPE:
       klee_error("JTAG debugger: pipe error");
@@ -239,7 +242,7 @@ void device::receive(uint8_t *data, uint32_t size) {
     }
   } while (received < size && attempt < 1);
 
-  printf("<%016lx", (unsigned long int)data);
+  //printf("<%016lx", (unsigned long int)data);
   //cout << termcolor::green << "JTAG < " << info.str() << endl;
 }
 
@@ -293,7 +296,8 @@ void device::write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::W
     }
     case Expr::Bool:
     case Expr::Int8: {
-  
+
+      klee_error("unsupported int8 access");
       b_address = concrete_address - (concrete_address % 4);
   
       new_val = read(b_address);
@@ -319,6 +323,7 @@ void device::write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::W
       break;
     }
     case Expr::Int16: {
+      klee_error("unsupported int16 access");
   
       b_address = concrete_address - (concrete_address % 4);
   
@@ -395,6 +400,7 @@ klee::ref<Expr> device::read(klee::ref<Expr> address, klee::Expr::Width w) {
     }
     case Expr::Bool:
     case Expr::Int8: {
+      klee_error("unsupported int8 access");
   
       b_address = concrete_address - (concrete_address % 4);
   
@@ -418,6 +424,7 @@ klee::ref<Expr> device::read(klee::ref<Expr> address, klee::Expr::Width w) {
       break;
     }
     case Expr::Int16: {
+      klee_error("unsupported int16 access");
   
       b_address = concrete_address - (concrete_address % 4);
   

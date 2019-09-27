@@ -43,6 +43,8 @@ inspect_ir("inspect_ir",
 
 cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"));
 
+cl::opt<std::string> interrupt_conf_file("interrupt_conf_file", cl::desc("<interrupt configuration file>"));
+
 static void parseArguments(int argc, char **argv) {
   // cl::SetVersionPrinter(klee::printVersion);
   // This version always reads response files
@@ -52,6 +54,7 @@ static void parseArguments(int argc, char **argv) {
 int main(int argc, char **argv) {
 
   device* io = NULL;
+  device* irq_io = NULL;
 
   // Call llvm_shutdown() on exit.
   atexit(llvm_shutdown);
@@ -71,10 +74,14 @@ int main(int argc, char **argv) {
 
   if( has_debugger ) {
     io = new device(0x04B4, 0x00F1, 0);
-
     io->init();
 
-    inception->add_target(io);
+
+    irq_io = new device(0x04b4, 0x00f1, 0, 0x02, 0x82);
+    irq_io->init();
+    irq_io->accept_timeout();
+
+    inception->add_target(io, irq_io);
   }
 
   // 2. We load the bitfile
@@ -97,10 +104,13 @@ int main(int argc, char **argv) {
   // 4. Load memory configuration from file
   inception->load_mem_conf_from_file(mem_conf_file.c_str());
 
-  // 5. start analysis
+  // 5. Load interrupt model from file
+  inception->load_interrupt_conf_from_file(interrupt_conf_file.c_str());
+
+  // 6. start analysis
   inception->start_analysis();
 
-  // 6. Clean memory and close inception
+  // 7. Clean memory and close inception
   inception->shutdown();
 
   if( has_debugger ) {

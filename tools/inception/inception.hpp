@@ -82,8 +82,8 @@ public:
 
   ~Inception() { shutdown(); };
 
-  void add_target(device* _device){
-    interpreter->add_target(_device);
+  void add_target(device* io_device, device* irq_device){
+    interpreter->add_target(io_device, irq_device);
   }
 
   void load_configuration(char **argv) {
@@ -111,6 +111,9 @@ public:
 
   // Load memory configuration from file
   void load_mem_conf_from_file(const char* _mem_conf_file_name);
+
+  // Load interrupt configuration from file
+  void load_interrupt_conf_from_file(const char* _interrupt_conf_file_name);
 
   // We set the entry point and start execution
   void set_main_function_by_address(unsigned int address){};
