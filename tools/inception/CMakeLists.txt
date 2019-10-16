@@ -14,6 +14,8 @@ add_executable(inception
   inception.cc
   inception_executor.cc
   klee-handler.cpp
+  target/openocd.cc
+  target/target.cc
 )
 
 set(KLEE_LIBS
@@ -39,7 +41,7 @@ klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 message(${LLVM_LIBS})
 
 target_link_libraries(inception PUBLIC ${LLVM_LIBS} usb-1.0 jsoncpp)
-target_link_libraries(inception PRIVATE ${KLEE_LIBS})
+target_link_libraries(inception PRIVATE ${KLEE_LIBS} jim openocd target jtag helper transport jaylink pld server)
 
 install(TARGETS inception RUNTIME DESTINATION bin)
 

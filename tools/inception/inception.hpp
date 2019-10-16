@@ -82,7 +82,7 @@ public:
 
   ~Inception() { shutdown(); };
 
-  void add_target(device* io_device, device* irq_device){
+  void add_target(Target* io_device, device* irq_device){
     interpreter->add_target(io_device, irq_device);
   }
 
@@ -122,7 +122,11 @@ public:
   void run();
 
   // Shutdown of all components
-  void shutdown() { delete interpreter; };
+  void shutdown() { 
+    interpreter->shutdown();
+    
+    delete interpreter;
+  };
 
   void interrupt_handle() {
     if (!interrupted && interpreter) {

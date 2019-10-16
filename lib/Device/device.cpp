@@ -187,6 +187,9 @@ uint32_t device::io(uint8_t endpoint, uint8_t *buffer, uint32_t size) {
     case LIBUSB_ERROR_NO_DEVICE:
       klee_error("JTAG debugger: device disconnected");
       break;
+    case LIBUSB_ERROR_IO:
+      klee_error("JTAG debugger: device io error");
+      break;
     default:
       klee_error("JTAG debugger: unexpected error");
       break;
@@ -248,26 +251,35 @@ void device::receive(uint8_t *data, uint32_t size) {
 
 void device::write(uint32_t address, uint32_t data) {
 
-  uint8_t* buffer = new uint8_t[12];
+  //uint8_t* buffer = new uint8_t[12];
 
-  uint32_t cmd = 0x14000001;
+  //uint32_t cmd = 0x14000001;
 
-  buffer[0] = (cmd >> 24);
-  buffer[1] = (cmd >> 16);
-  buffer[2] = (cmd >> 8);
-  buffer[3] = (cmd & 0xFF);
+  address = address & ((uint32_t)~0x1);
 
-  buffer[4] = (address >> 24);
-  buffer[5] = (address >> 16);
-  buffer[6] = (address >> 8);
-  buffer[7] = (address & 0xFF);
+  unsigned int long packet = 0x0000000000000000;
+  packet |= ((unsigned long int)data << 32) | (unsigned long int)address;
+  uint8_t* i8_packet_w = (uint8_t*) &packet;
 
-  buffer[8] = (data >> 24);
-  buffer[9] = (data >> 16);
-  buffer[10] = (data >> 8);
-  buffer[11] = (data & 0xFF);
+  //buffer[0] = (cmd >> 24);
+  //buffer[1] = (cmd >> 16);
+  //buffer[2] = (cmd >> 8);
+  //buffer[3] = (cmd & 0xFF);
 
-  send(buffer, 12);
+  //buffer[4] = (address >> 24);
+  //buffer[5] = (address >> 16);
+  //buffer[6] = (address >> 8);
+  //buffer[7] = (address & 0xFF);
+
+  //buffer[8] = (data >> 24);
+  //buffer[9] = (data >> 16);
+  //buffer[10] = (data >> 8);
+  //buffer[11] = (data & 0xFF);
+
+  //send(buffer, 12);
+  send(i8_packet_w, 8);
+
+  printf("Writing to %08x -> %08x\n", address, data);
 
   //cmd->push_back((uint32_t) 0x24000001);
   //cmd->push_back((uint32_t) address);
@@ -351,32 +363,39 @@ void device::write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::W
 
 uint32_t device::read(uint32_t address) {
   
-  uint8_t* buffer = new uint8_t[8];
+  unsigned int long packet = 0x0000000000000000;
+  packet |= (unsigned long int)address | (unsigned long int)0x1;
+  uint8_t* i8_packet_r = (uint8_t*) &packet; 
+ 
+  //uint8_t* buffer = new uint8_t[8];
   uint8_t* out_buffer = new uint8_t[8];
   uint32_t ret = 0;
 
-  uint32_t cmd = 0x24000001;
+  //uint32_t cmd = 0x24000001;
 
-  buffer[0] = (cmd >> 24);
-  buffer[1] = (cmd >> 16);
-  buffer[2] = (cmd >> 8);
-  buffer[3] = (cmd & 0xFF);
+  //buffer[0] = (cmd >> 24);
+  //buffer[1] = (cmd >> 16);
+  //buffer[2] = (cmd >> 8);
+  //buffer[3] = (cmd & 0xFF);
 
-  buffer[4] = (address >> 24);
-  buffer[5] = (address >> 16);
-  buffer[6] = (address >> 8);
-  buffer[7] = (address & 0xFF);
+  //buffer[4] = (address >> 24);
+  //buffer[5] = (address >> 16);
+  //buffer[6] = (address >> 8);
+  //buffer[7] = (address & 0xFF);
  
-  send(buffer, 8);
+  //send(buffer, 8);
+  send(i8_packet_r, 8);
  
   receive(out_buffer, 8);
 
-  free(buffer);
+  //free(buffer);
 
-  ret  |= out_buffer[4] << 24;
-  ret  |= out_buffer[5] << 16;
-  ret  |= out_buffer[6] << 8;
-  ret  |= out_buffer[7];
+  ret  |= out_buffer[7] << 24;
+  ret  |= out_buffer[6] << 16;
+  ret  |= out_buffer[5] << 8;
+  ret  |= out_buffer[4];
+  
+  printf("Reading from %08x -> %08x\n", address, ret);
 
   return ret;
   //cmd->push_back((uint32_t) 0x14000001);

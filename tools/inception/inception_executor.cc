@@ -56,9 +56,11 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
+bool irq_running;
+
 void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
-  while(1) {
+  while(irq_running) {
     
     uint8_t buffer[8] = {0};
     uint32_t value=0;
@@ -83,6 +85,7 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
       printf("[Trace] Interrupt ID : %08x\n", value); 
     }
   }
+  irq_running = true;
 }
 
 
@@ -861,7 +864,7 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
 
-    if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
+    /*if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
       for (std::map<uint32_t,uint32_t>::iterator it=irq_model.begin(); it!=irq_model.end(); ++it) {
 
         if((instructions_counter % it->second) == 0) {
@@ -871,7 +874,7 @@ void InceptionExecutor::run(ExecutionState &initialState) {
         } 
       }
           
-    }
+    }*/
     KInstruction *ki = state.pc;
     stepInstruction(state);
 

@@ -8,6 +8,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Object/ObjectFile.h"
 #include "device/device.hpp"
+#include "target/target.hpp"
 
 #include <string>
 #include <vector>
@@ -18,6 +19,8 @@
 using namespace llvm;
 
 namespace klee {
+
+extern bool irq_running;
 
 class InceptionExecutor;
 
@@ -41,7 +44,7 @@ class InceptionExecutor : public Executor{
 
   std::set<uint64_t> forwarded_mem;
 
-  device* io;
+  Target* io;
 
   device* io_irq;
 
@@ -58,8 +61,15 @@ class InceptionExecutor : public Executor{
   uint64_t instructions_counter;
 
   std::map<uint32_t, uint32_t> irq_model;
-  
+ 
+  std::thread* irq_handler_thread;
+
   public:
+ 
+  void shutdown() {
+    irq_running = false;
+    while(irq_running == false);
+  }
 
   void set_min_irq_threshold(uint64_t _min_irq_threshold) {
     min_irq_threshold = _min_irq_threshold; 
@@ -73,12 +83,13 @@ class InceptionExecutor : public Executor{
     irq_model.insert(std::pair<uint32_t, uint32_t>(irq_id, frequency));
   }
 
-  void add_target(device* io_device, device* irq_device){
+  void add_target(Target* io_device, device* irq_device){
     io     = io_device;
     io_irq = irq_device;
 
-    std::thread irq_handler_thread (irq_handler, io_irq, this);
-    irq_handler_thread.detach();
+    irq_running = true;
+    irq_handler_thread = new std::thread(irq_handler, io_irq, this);
+    irq_handler_thread->detach();
 
   }
 
@@ -110,6 +121,7 @@ class InceptionExecutor : public Executor{
     io = NULL;
     io_irq = NULL;
     min_irq_threshold = 0;
+    irq_running = false;
   };
 
 	void executeMemoryOperation(ExecutionState &state,

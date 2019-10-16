@@ -20,6 +20,7 @@ using namespace std;
 #include "inception.hpp"
 
 #include "device/device.hpp"
+#include "target/target.hpp"
 
 /*
  * Arguments specific to Inception
@@ -41,6 +42,13 @@ inspect_ir("inspect_ir",
           cl::init(false),
           cl::desc("inspect lifted IR functions (default=false)"));
 
+cl::opt<bool>
+enable_hw_snapshot("enable_hw_snapshot",
+          cl::init(false),
+          cl::desc("<enable hardware snapshot> (default=false)"));
+
+cl::opt<std::string> debugger_name("debugger", cl::desc("<set debugger name> (no default value)"));
+
 cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"));
 
 cl::opt<std::string> interrupt_conf_file("interrupt_conf_file", cl::desc("<interrupt configuration file>"));
@@ -53,7 +61,8 @@ static void parseArguments(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 
-  device* io = NULL;
+  Target* io     = NULL;
+  device* io_snp = NULL;
   device* irq_io = NULL;
 
   // Call llvm_shutdown() on exit.
@@ -72,10 +81,16 @@ int main(int argc, char **argv) {
   // 1. We init Inception
   Inception *inception = new Inception();
 
-  if( has_debugger ) {
-    io = new device(0x04B4, 0x00F1, 0);
-    io->init();
+  if( enable_hw_snapshot ) {
+    
+    //io_snp = new device(0x04B4, 0x00F1, 0);
+    //io_snp->init();  
+  }
 
+  if( has_debugger ) {
+ 
+    io = Target::build(debugger_name); 
+    io->init();
 
     irq_io = new device(0x04b4, 0x00f1, 0, 0x02, 0x82);
     irq_io->init();
@@ -114,6 +129,7 @@ int main(int argc, char **argv) {
   inception->shutdown();
 
   if( has_debugger ) {
+    irq_io->close();
     io->close();
   }
 
