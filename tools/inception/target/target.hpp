@@ -1,0 +1,31 @@
+#ifndef TARGET
+#define TARGET
+
+#include "klee/Common.h"
+#include "klee/Expr.h"
+
+using namespace klee;
+
+class Target {
+  public:
+  std::string name;
+
+  std::string getName() { return name;}
+  
+  void setName(std::string _name) { name = _name;}
+
+  virtual klee::ref<Expr> read(klee::ref<Expr> address, klee::Expr::Width w) = 0;
+
+  virtual void write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::Width w) = 0;
+
+  virtual void init() = 0;
+
+  virtual void close() = 0;
+
+  virtual uint32_t save() = 0;
+
+  virtual void restore(uint32_t id) = 0;
+
+};
+
+#endif

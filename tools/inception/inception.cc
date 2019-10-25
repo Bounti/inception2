@@ -161,7 +161,7 @@ void Inception::load_mem_conf_from_file(const char* _mem_conf_file_name) {
       unsigned int base        = to_hexa(it->get("base", "0").asString());
       unsigned int size        = to_hexa(it->get("size", "0").asString());
       bool is_read_only        = it->get("read_only", false).asBool();
-      std::string destination = it->get("destination", "").asString();
+      std::string target       = it->get("target", "").asString();
 
       std::string strategy = it->get("strategy", "concrete").asString();
 
@@ -174,7 +174,7 @@ void Inception::load_mem_conf_from_file(const char* _mem_conf_file_name) {
         is_forwarded = true;
       }
 
-      interpreter->addCustomObject(name, base, size, is_read_only, is_symbolic, is_randomized, is_forwarded);
+      interpreter->addCustomObject(name, base, size, is_read_only, is_symbolic, is_randomized, is_forwarded, target);
     }
   } else {
     klee::klee_error("unable to read configuration file %s", _mem_conf_file_name);

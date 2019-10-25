@@ -69,6 +69,10 @@ int main(int argc, char **argv) {
   // 1. We init Inception
   Inception *inception = new Inception();
 
+  // 5. We load the configuration
+  inception->load_targets_conf_from_file(mem_conf_file.c_str());
+
+
   //if( enable_hw_snapshot ) {
 
     //io_snp = new device(0x04B4, 0x00F1, 0);
@@ -102,9 +106,6 @@ int main(int argc, char **argv) {
 
   // 4. Load memory configuration from file
   inception->load_mem_conf_from_file(mem_conf_file.c_str());
-
-  // 5. We load the configuration
-  inception->load_targets_conf_from_file(mem_conf_file.c_str());
 
   // 6. Load interrupt model from file
   inception->load_interrupt_conf_from_file(interrupt_conf_file.c_str());

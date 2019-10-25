@@ -91,20 +91,26 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
 
   Target* target = NULL;
+  
+  if( resolve_target(name) != NULL )
+    return;
 
-  if( name.compare("usb3_dap") ) {
-    target = new usb3dap(); 
-  } else if ( name.compare("jlink") ) {
+  if( name.compare("usb3_dap") == 0 ) {
+    target = new usb3dap();
+  } else if ( name.compare("jlink") == 0 ) {
     target = new jlink();
-  } else if( name.compare("openocd") ) {
+  } else if( name.compare("openocd") == 0 ) {
     target = new openocd(); 
-  } else if( name.compare("verilator") ) {
+  } else if( name.compare("verilator") == 0 ) {
     target = new verilator();
   }
 
   if(target == NULL) {
     klee_error("targets configuration does not support %s", type);
   } else {
+    klee_message("adding target %s", type.c_str());
+    target->setName(name);
+    target->init();
     targets.push_back(target);
   }
 }
@@ -161,7 +167,7 @@ object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string ex
 
 MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
                                            bool isReadOnly, bool isSymbolic,
-                                           bool isRandomized, bool isForwarded, const llvm::Value* allocSite) {
+                                           bool isRandomized, bool isForwarded, std::string target_name, const llvm::Value* allocSite) {
 
   klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
 
@@ -182,11 +188,15 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
   else if( isSymbolic )
     executeMakeSymbolic(*init_state, mo, name);
   else if( isForwarded ) {
-    if( io == NULL )
-      klee_error("unsupported forwarding strategy when no debugger are attached (--has_debugger)");
-
+    
     os->initializeToZero();
-    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, NULL));
+
+    Target* target = resolve_target(target_name);
+    if( target == NULL ) {
+      klee_error("Configuration missmatch: unknown target %s ", target_name.c_str());
+    }
+
+    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, target));
   }
   else
     os->initializeToZero();
@@ -582,7 +592,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       if( success ){
         mo = addCustomObject(v->getName(), device_address, size,
                                            /*isReadOnly*/false, /*isSymbolic*/false,
-                                           /*isRandomized*/false, /*isForwarded*/false, v);
+                                           /*isRandomized*/false, /*isForwarded*/false, "", v);
       } else {
         mo = memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/true, /*allocSite=*/v,
@@ -684,15 +694,25 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
 
-          if( forwarded_mem.count(mo->address) > 0 ) {
 
-            io->write(address, value, type);
+          std::map<uint64_t, Target*>::iterator it;
+          
+          it = forwarded_mem.find(mo->address);
+          if (it != forwarded_mem.end()) {
+            Target* device = it->second;
+            
+            device->write(address, value, type);
           }
         }
       } else {
-
-        if( forwarded_mem.count(mo->address) > 0 ) {
-          ref<Expr> result = io->read(address, type);
+  
+        std::map<uint64_t, Target*>::iterator it;
+        
+        it = forwarded_mem.find(mo->address);
+        if (it != forwarded_mem.end()) {
+          Target* device = it->second;
+          
+          ref<Expr> result = device->read(address, type);
 
           bindLocal(target, state, result);
         } else {

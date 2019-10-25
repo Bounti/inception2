@@ -71,6 +71,19 @@ class InceptionExecutor : public Executor{
 
   std::thread* irq_handler_thread;
 
+  Target* resolve_target(std::string name) {
+
+    std::vector<Target*>::iterator it;  
+    
+    for (it = targets.begin() ; it != targets.end(); ++it) {
+      Target* target = *it;
+      if( target->getName().compare(name) == 0)
+        return target;
+    }
+
+    return NULL;
+  }
+
   public:
 
   void add_target(std::string name, std::string type, std::string binary, std::string args);
@@ -110,7 +123,7 @@ class InceptionExecutor : public Executor{
 
   MemoryObject* addCustomObject(std::string name, std::uint64_t addr, unsigned size,
                         bool isReadOnly, bool isSymbolic,
-                        bool isRandomized, bool isForwarded, const llvm::Value* allocSite = nullptr);
+                        bool isRandomized, bool isForwarded, std::string target="", const llvm::Value* allocSite = nullptr);
 
   void start_analysis();
 
