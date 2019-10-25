@@ -27,7 +27,6 @@ uint32_t to_hexa(std::string str) {
   return res;
 }
 
-
 // Load ELF binary
 void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
 
@@ -54,6 +53,43 @@ void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
   }
 
   interpreter->set_elf(TempExecutable);
+}
+
+// Load Targets env
+void Inception::load_targets_conf_from_file(const char* _targets_conf_file) {
+
+  if (_targets_conf_file != "-" && !sys::fs::exists(_targets_conf_file)) {
+    klee::klee_error("unable to load target configuration : %s ", _targets_conf_file);
+  }
+
+  std::ifstream config_file(_targets_conf_file, std::ifstream::binary);
+
+  if (config_file) {
+
+    // Load json in memory
+    Json::Value* json = new Json::Value();
+
+    config_file >> (*json);
+
+    // Parse expected configuration
+    auto irq_section = ((*json)["targets"]);
+
+    auto it = irq_section.begin();
+    auto limit = irq_section.end();
+
+    for(; it!=limit ;it++) {
+
+      std::string name         = it->get("name", "").asString();
+      std::string type         = it->get("type", "").asString();
+      std::string binary       = it->get("binary", "").asString();
+      std::string args         = it->get("args", "").asString();
+
+      interpreter->add_target(name, type, binary, args);
+    }
+
+  } else {
+    klee::klee_error("unable to read configuration file %s", _targets_conf_file);
+  }
 }
 
 // Load interrupt configuration from file

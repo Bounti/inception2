@@ -10,6 +10,11 @@
 #include "device/device.hpp"
 #include "target/target.hpp"
 
+#include "target/openocd/openocd.hpp"
+#include "target/jlink/jlink.hpp"
+#include "target/verilator/verilator.hpp"
+#include "target/usb3dap/usb3dap.hpp"
+
 #include <string>
 #include <vector>
 #include <set>
@@ -42,7 +47,7 @@ class InceptionExecutor : public Executor{
 
   object::SectionRef resolve_elf_section_by_name(std::string expected_name, bool* success);
 
-  std::set<uint64_t> forwarded_mem;
+  std::map<uint64_t, Target*> forwarded_mem;
 
   Target* io;
 
@@ -57,15 +62,19 @@ class InceptionExecutor : public Executor{
   ref<Expr> readAt(ExecutionState &state, ref<Expr> address) const;
 
   uint64_t min_irq_threshold;
-  
+
   uint64_t instructions_counter;
 
   std::map<uint32_t, uint32_t> irq_model;
- 
+
+  std::vector<Target*> targets;
+
   std::thread* irq_handler_thread;
 
   public:
- 
+
+  void add_target(std::string name, std::string type, std::string binary, std::string args);
+
   void shutdown() {
     irq_running = false;
     while(irq_running == false);

@@ -33,21 +33,9 @@ cl::opt<std::string> elf_file("elf", cl::desc("<input ELF binary>"),
                                   cl::Required);
 
 cl::opt<bool>
-has_debugger("has_debugger",
-          cl::init(false),
-          cl::desc("is the Inception debugger attached (default=false)"));
-
-cl::opt<bool>
-inspect_ir("inspect_ir",
-          cl::init(false),
-          cl::desc("inspect lifted IR functions (default=false)"));
-
-cl::opt<bool>
 enable_hw_snapshot("enable_hw_snapshot",
           cl::init(false),
           cl::desc("<enable hardware snapshot> (default=false)"));
-
-cl::opt<std::string> debugger_name("debugger", cl::desc("<set debugger name> (no default value)"));
 
 cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"));
 
@@ -81,23 +69,23 @@ int main(int argc, char **argv) {
   // 1. We init Inception
   Inception *inception = new Inception();
 
-  if( enable_hw_snapshot ) {
-    
+  //if( enable_hw_snapshot ) {
+
     //io_snp = new device(0x04B4, 0x00F1, 0);
-    //io_snp->init();  
-  }
+    //io_snp->init();
+  //}
 
-  if( has_debugger ) {
- 
-    io = Target::build(debugger_name); 
-    io->init();
+  //if( has_debugger ) {
 
-    irq_io = new device(0x04b4, 0x00f1, 0, 0x02, 0x82);
-    irq_io->init();
-    irq_io->accept_timeout();
+  //  io = Target::build(debugger_name);
+  //  io->init();
 
-    inception->add_target(io, irq_io);
-  }
+  //  irq_io = new device(0x04b4, 0x00f1, 0, 0x02, 0x82);
+  //  irq_io->init();
+  //  irq_io->accept_timeout();
+
+  //  inception->add_target(io, irq_io);
+  //}
 
   // 2. We load the bitfile
   inception->load_llvm_bitcode_from_file(bitcode_file.c_str());
@@ -108,30 +96,29 @@ int main(int argc, char **argv) {
   // 4. Run Inception Passes to lower assembly and binary dependencies in LLVM IR
   inception->runPasses();
 
-  // is interactive mode asked ?
-  if( inspect_ir ) {}
-
   inception->load_configuration(argv);
 
   inception->prepare();
- 
-  
+
   // 4. Load memory configuration from file
   inception->load_mem_conf_from_file(mem_conf_file.c_str());
 
-  // 5. Load interrupt model from file
+  // 5. We load the configuration
+  inception->load_targets_conf_from_file(mem_conf_file.c_str());
+
+  // 6. Load interrupt model from file
   inception->load_interrupt_conf_from_file(interrupt_conf_file.c_str());
 
-  // 6. start analysis
+  // 7. start analysis
   inception->start_analysis();
 
-  // 7. Clean memory and close inception
+  // 8. Clean memory and close inception
   inception->shutdown();
 
-  if( has_debugger ) {
-    irq_io->close();
-    io->close();
-  }
+  //if( has_debugger ) {
+  //  irq_io->close();
+  //  io->close();
+  //}
 
   return 0;
 }

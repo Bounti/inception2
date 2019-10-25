@@ -61,12 +61,12 @@ bool irq_running;
 void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
   while(irq_running) {
-    
+
     uint8_t buffer[8] = {0};
     uint32_t value=0;
     uint32_t error_code;
 
-    io_irq->receive(buffer, 8);
+    //io_irq->receive(buffer, 8);
 
     error_code |= buffer[0] << 24;
     error_code |= buffer[1] << 16;
@@ -78,16 +78,36 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
     value |= buffer[6] << 8;
     value |= buffer[7];
 
-    //printf("[Trace] Interrupt error_code : %08x\n", error_code); 
+    //printf("[Trace] Interrupt error_code : %08x\n", error_code);
 
     if(value != 0) {
-      executor->push_irq(value); 
-      printf("[Trace] Interrupt ID : %08x\n", value); 
+      executor->push_irq(value);
+      printf("[Trace] Interrupt ID : %08x\n", value);
     }
   }
   irq_running = true;
 }
 
+void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
+
+  Target* target = NULL;
+
+  if( name.compare("usb3_dap") ) {
+    target = new usb3dap(); 
+  } else if ( name.compare("jlink") ) {
+    target = new jlink();
+  } else if( name.compare("openocd") ) {
+    target = new openocd(); 
+  } else if( name.compare("verilator") ) {
+    target = new verilator();
+  }
+
+  if(target == NULL) {
+    klee_error("targets configuration does not support %s", type);
+  } else {
+    targets.push_back(target);
+  }
+}
 
 object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
   uint64_t addr, size;
@@ -164,9 +184,9 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
   else if( isForwarded ) {
     if( io == NULL )
       klee_error("unsupported forwarding strategy when no debugger are attached (--has_debugger)");
-    
+
     os->initializeToZero();
-    forwarded_mem.insert(addr); 
+    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, NULL));
   }
   else
     os->initializeToZero();
@@ -175,10 +195,10 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
 }
 
 /*
- * Overwrite load, store, call and ret 
+ * Overwrite load, store, call and ret
  * 'load' and 'store' has to call our own executeMemoryOperation so that wa can catch forwarded requests
  * 'call' has a custom logic to support functions pointer. This is part of the unified memory
- * 'ret' has to check if we are returning from an interrupt handler, if it is the case  
+ * 'ret' has to check if we are returning from an interrupt handler, if it is the case
 */
 void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
@@ -286,7 +306,7 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
               f = seek->second;
 //            if (legalFunctions.count(addr)) {
               //f = (Function*) addr;
-              
+
               // Don't give warning on unique resolution
               if (res.second || !first)
                 klee_warning_once(reinterpret_cast<void*>(addr),
@@ -330,7 +350,7 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     if (!isVoidReturn) {
       result = eval(ki, 0, state).value;
     }
-    
+
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
       terminateStateOnExit(state);
@@ -354,9 +374,9 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
           // may need to do coercion due to bitcasts
           Expr::Width from = result->getWidth();
           Expr::Width to = getWidthForLLVMType(t);
-            
+
           if (from != to) {
-            CallSite cs = (isa<InvokeInst>(caller) ? CallSite(cast<InvokeInst>(caller)) : 
+            CallSite cs = (isa<InvokeInst>(caller) ? CallSite(cast<InvokeInst>(caller)) :
                            CallSite(cast<CallInst>(caller)));
 
             // XXX need to check other param attrs ?
@@ -383,7 +403,7 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
         }
 
       }
-    }      
+    }
     break;
   }
     default:
@@ -428,9 +448,9 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
         } else {
           success = true;
           klee_message("mapping function %s to device address %016lx", f->getName().str().c_str(), device_address);
-        } 
+        }
       } else {
-        device_address = reinterpret_cast<std::uint64_t>(f); 
+        device_address = reinterpret_cast<std::uint64_t>(f);
       }
 
       // Create a 32bits pointer
@@ -666,8 +686,8 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
 
           if( forwarded_mem.count(mo->address) > 0 ) {
 
-            io->write(address, value, type); 
-          } 
+            io->write(address, value, type);
+          }
         }
       } else {
 
@@ -680,9 +700,9 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
 
           if (interpreterOpts.MakeConcreteSymbolic)
             result = replaceReadWithSymbolic(state, result);
-          
+
           bindLocal(target, state, result);
-        } 
+        }
 
       }
 
@@ -722,8 +742,8 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
           wos->write(mo->getOffsetExpr(address), value);
           if( forwarded_mem.count(mo->address) > 0 ) {
 
-            io->write(address, value, type); 
-          } 
+            io->write(address, value, type);
+          }
         }
       } else {
 
@@ -765,8 +785,8 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
 
   Function* caller = current->pc->inst->getParent()->getParent();
 
-  interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller)); 
-  
+  interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller));
+
   // return if the caller is one klee or inception function that should be
   // atomic
   if (caller->getName().find("klee_") != std::string::npos ||
@@ -817,25 +837,25 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
 }
 
  ref<Expr> InceptionExecutor::readAt(ExecutionState &state, ref<Expr> address) const {
- 
+
    ObjectPair op;
    bool success;
- 
+
    solver->setTimeout(coreSolverTimeout);
- 
+
    state.addressSpace.resolveOne(state, solver, address, op, success);
- 
+
    if (success) {
- 
+
      const MemoryObject *mo = op.first;
- 
+
      ref<Expr> addr = mo->getOffsetExpr(address);
- 
+
      const ObjectState *os = state.addressSpace.findObject(mo);
      assert(os);
- 
+
      ref<Expr> result = os->read(addr, Expr::Int32);
-  
+
      return result;
    } else
      return klee::ConstantExpr::create(-1, Expr::Int32);
@@ -871,9 +891,9 @@ void InceptionExecutor::run(ExecutionState &initialState) {
           // We use the interrupt stack to keep compatibility with real device interrupt controller
           push_irq(it->first);
           serve_pending_interrupt(&state);
-        } 
+        }
       }
-          
+
     }*/
     KInstruction *ki = state.pc;
     stepInstruction(state);

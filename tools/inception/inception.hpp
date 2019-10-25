@@ -103,6 +103,9 @@ public:
     mainModule = finalModule;
   }
 
+  // load targets configuration
+  void load_targets_conf_from_file(const char* _target_conf_file);
+
   // We load the bitfile
   void load_llvm_bitcode_from_file(const char *_bc_file_name);
 

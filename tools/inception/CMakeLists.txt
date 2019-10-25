@@ -14,14 +14,18 @@ add_executable(inception
   inception.cc
   inception_executor.cc
   klee-handler.cpp
-  target/openocd.cc
+  target/jlink/JlinkUtil.c
   target/target.cc
+  target/usb3dap/usb3dap.cc
+  target/verilator/verilator.cc
+  target/openocd/openocd.cc
+  target/jlink/jlink.cc
+  snapshotting/criu.cc
 )
 
 set(KLEE_LIBS
   kleeCore
   kleeModule
-  Device
 )
 
 set(LLVM_COMPONENTS
@@ -36,12 +40,14 @@ set(LLVM_COMPONENTS
   option
 )
 
+target_include_directories(inception PRIVATE target/)
+
 klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 
 message(${LLVM_LIBS})
 
-target_link_libraries(inception PUBLIC ${LLVM_LIBS} usb-1.0 jsoncpp)
-target_link_libraries(inception PRIVATE ${KLEE_LIBS} jim openocd target jtag helper transport jaylink pld server)
+target_link_libraries(inception PUBLIC ${LLVM_LIBS} usb-1.0 jsoncpp criu)
+target_link_libraries(inception PRIVATE ${KLEE_LIBS} jim openocd target jtag helper transport jaylink pld server ${CMAKE_CURRENT_SOURCE_DIR}/target/jlink/libjlinkarm.so usb-1.0)
 
 install(TARGETS inception RUNTIME DESTINATION bin)
 
