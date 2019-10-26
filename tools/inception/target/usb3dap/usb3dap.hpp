@@ -72,6 +72,8 @@ public:
   void send(uint8_t *data, uint32_t size);
 
   void receive(uint8_t *data, uint32_t size);
+  
+  bool has_pending_irq() { return false;};
 
 private:
 

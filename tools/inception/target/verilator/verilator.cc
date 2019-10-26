@@ -3,6 +3,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>        /* For mode constants */
 #include <fcntl.h>           /* For O_* constants */
+#include <signal.h>
+#include <sys/wait.h>
 
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "klee/Expr.h"
@@ -18,6 +20,18 @@ typedef struct {
   uint32_t value;
   uint8_t  status;
 }IPC_MESSAGE;
+
+bool verilator::has_pending_irq() {
+
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+
+  if ( ipc->irq_in == 1) {
+    ipc->irq_in = 0;
+    return true;
+  }
+
+  return false;
+};
 
 void verilator::write(uint32_t address, uint32_t data) {
 
@@ -79,7 +93,17 @@ void verilator::init() {
 }
 
 void verilator::close() {
+  int status;
+
   munmap(ipc_ptr, 14);
+  
+  klee_warning("closing target: verilator...");
+  
+  kill(pid, SIGKILL);
+  if (waitpid (pid, &status, 0) < 0) {
+    perror ("waitpid");
+  }
+
 }
 
 klee::ref<Expr> verilator::read(klee::ref<Expr> address, klee::Expr::Width w) {

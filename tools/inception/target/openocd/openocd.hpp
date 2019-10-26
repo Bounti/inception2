@@ -152,6 +152,8 @@ class openocd : public Target {
   uint32_t save() { return 0;};
 
   void restore(uint32_t id) {};
+  
+  bool has_pending_irq() { return false;};
 
 };
 

@@ -38,6 +38,8 @@ class Target {
 
   virtual void restore(uint32_t id) = 0;
 
+  virtual bool has_pending_irq() = 0;
+
 };
 
 #endif

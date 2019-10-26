@@ -32,6 +32,9 @@ class InceptionExecutor;
 void irq_handler(device* io_irq, InceptionExecutor* executor);
 
 class InceptionExecutor : public Executor{
+  public:
+  std::vector<Target*> targets;
+  
   private:
   /// The set of legal function addresses, used to validate function
   /// pointers. We use the symbol table to get the function address.
@@ -67,8 +70,6 @@ class InceptionExecutor : public Executor{
 
   std::map<uint32_t, uint32_t> irq_model;
 
-  std::vector<Target*> targets;
-
   std::thread* irq_handler_thread;
 
   Target* resolve_target(std::string name) {
@@ -90,7 +91,13 @@ class InceptionExecutor : public Executor{
 
   void shutdown() {
     irq_running = false;
-    //while(irq_running == false);
+    while(irq_running == false);
+    std::vector<Target*>::iterator it;  
+    
+    for (it = targets.begin() ; it != targets.end(); ++it) {
+      Target* target = *it;
+      target->close();
+    }
   }
 
   void set_min_irq_threshold(uint64_t _min_irq_threshold) {
@@ -108,11 +115,6 @@ class InceptionExecutor : public Executor{
   void add_target(Target* io_device, device* irq_device){
     io     = io_device;
     io_irq = irq_device;
-
-    irq_running = true;
-    irq_handler_thread = new std::thread(irq_handler, io_irq, this);
-    irq_handler_thread->detach();
-
   }
 
   void set_elf(std::unique_ptr<object::ObjectFile>& _elf) {

@@ -31,6 +31,7 @@ class verilator : public Target {
     
     void restore(uint32_t id) {};
 
+    bool has_pending_irq();
 };
 
 #endif

@@ -62,21 +62,28 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
   while(irq_running) {
 
-    uint8_t buffer[8] = {0};
+    //uint8_t buffer[8] = {0};
     uint32_t value=0;
-    uint32_t error_code;
+    //uint32_t error_code;
 
     //io_irq->receive(buffer, 8);
+    std::vector<Target*>::iterator it;
 
-    error_code |= buffer[0] << 24;
-    error_code |= buffer[1] << 16;
-    error_code |= buffer[2] << 8;
-    error_code |= buffer[3];
+    for (it = executor->targets.begin() ; it != executor->targets.end(); ++it) {
+      Target* target = *it;
+      if( target->has_pending_irq() )
+        printf("[Trace] *******************************  *Interrupt  ********************************\n");
+    }
 
-    value |= buffer[4] << 24;
-    value |= buffer[5] << 16;
-    value |= buffer[6] << 8;
-    value |= buffer[7];
+    //error_code |= buffer[0] << 24;
+    //error_code |= buffer[1] << 16;
+    //error_code |= buffer[2] << 8;
+    //error_code |= buffer[3];
+
+    //value |= buffer[4] << 24;
+    //value |= buffer[5] << 16;
+    //value |= buffer[6] << 8;
+    //value |= buffer[7];
 
     //printf("[Trace] Interrupt error_code : %08x\n", error_code);
 
@@ -890,6 +897,11 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
  * Futermore, it enables overriding subsequent methods such as executeMemoryOperation
 */
 void InceptionExecutor::run(ExecutionState &initialState) {
+
+  irq_running = true;
+  irq_handler_thread = new std::thread(irq_handler, io_irq, this);
+  irq_handler_thread->detach();
+  
   bindModuleConstants();
 
   // Delay init till now so that ticks don't accrue during
