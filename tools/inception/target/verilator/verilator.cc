@@ -1,20 +1,85 @@
 #include "verilator.hpp"
 
+#include <sys/mman.h>
+#include <sys/stat.h>        /* For mode constants */
+#include <fcntl.h>           /* For O_* constants */
+
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "klee/Expr.h"
 
 using namespace klee;
 
+typedef struct {
+  uint8_t irq_in;
+  uint8_t irq_ack;
+
+  uint32_t address;
+  uint8_t  type;
+  uint32_t value;
+  uint8_t  status;
+}IPC_MESSAGE;
+
 void verilator::write(uint32_t address, uint32_t data) {
+
+  //klee_warning("verilator::write(%08x, %08x)", address, data);
+
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+
+  ipc->value    = data;
+  ipc->address  = address;
+  ipc->type   = 'W';
+  ipc->status   = 0x50;
 }
 
 uint32_t verilator::read(uint32_t address) {
+  
+  //klee_warning("verilator::read(%08x, %08x)", address);
+  
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+
+  ipc->address  = address;
+  ipc->type   = 'R';
+  ipc->status   = 0x50;
+
+  while((ipc->status == 0x50) || (ipc->status == 0x42));
+
+  return ipc->value;
 }
 
 void verilator::init() {
+
+  pid = fork();
+  if (pid == 0)
+  {
+      // replace son memory with binary binary
+      char *args_execv[] = {(char*)binary.c_str(),NULL};
+      execv(binary.c_str(), args_execv);
+      _exit(1);
+  }
+  else if (pid > 0)
+  {
+       // do nothing here, we are the parent
+  }
+  else
+  {
+      perror("fork failed");
+      _exit(3);
+  }
+
+  int sync_mem = shm_open("/sync_fifo", O_CREAT|O_RDWR, 0777);
+  if(sync_mem == -1){
+    klee_error("unable to create IPC shared memory (verilator com. channel)");
+  }
+
+  ipc_ptr = (u_char *) mmap(NULL, 14, PROT_READ|PROT_WRITE, MAP_SHARED, sync_mem, 0);
+  if (ipc_ptr == MAP_FAILED) {
+    klee_error("unable to create IPC shared memory (verilator com. channel)");
+  }
+
 }
 
 void verilator::close() {
+  munmap(ipc_ptr, 14);
 }
 
 klee::ref<Expr> verilator::read(klee::ref<Expr> address, klee::Expr::Width w) {

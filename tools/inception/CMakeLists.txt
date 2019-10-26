@@ -46,7 +46,7 @@ klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 
 message(${LLVM_LIBS})
 
-target_link_libraries(inception PUBLIC ${LLVM_LIBS} usb-1.0 jsoncpp criu)
+target_link_libraries(inception PUBLIC ${LLVM_LIBS} usb-1.0 jsoncpp criu rt)
 target_link_libraries(inception PRIVATE ${KLEE_LIBS} jim openocd target jtag helper transport jaylink pld server ${CMAKE_CURRENT_SOURCE_DIR}/target/jlink/libjlinkarm.so usb-1.0)
 
 install(TARGETS inception RUNTIME DESTINATION bin)

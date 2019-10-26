@@ -10,6 +10,18 @@ class Target {
   public:
   std::string name;
 
+  std::string args;
+
+  std::string binary;
+
+  std::string getArgs() { return args;}
+  
+  void setArgs(std::string _args) { args = _args;}
+
+  std::string getBinary() { return binary;}
+  
+  void setBinary(std::string _binary) { binary = _binary;}
+
   std::string getName() { return name;}
   
   void setName(std::string _name) { name = _name;}

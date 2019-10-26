@@ -90,7 +90,7 @@ class InceptionExecutor : public Executor{
 
   void shutdown() {
     irq_running = false;
-    while(irq_running == false);
+    //while(irq_running == false);
   }
 
   void set_min_irq_threshold(uint64_t _min_irq_threshold) {

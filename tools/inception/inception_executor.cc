@@ -99,10 +99,14 @@ void InceptionExecutor::add_target(std::string name, std::string type, std::stri
     target = new usb3dap();
   } else if ( name.compare("jlink") == 0 ) {
     target = new jlink();
+    target->setArgs(args);
   } else if( name.compare("openocd") == 0 ) {
     target = new openocd(); 
+    target->setArgs(args);
   } else if( name.compare("verilator") == 0 ) {
     target = new verilator();
+    target->setBinary(binary);
+    target->setArgs(args);
   }
 
   if(target == NULL) {
