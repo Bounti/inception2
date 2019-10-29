@@ -40,6 +40,8 @@ class Target {
 
   virtual bool has_pending_irq() = 0;
 
+  virtual int32_t get_active_irq() = 0;
+
 };
 
 #endif

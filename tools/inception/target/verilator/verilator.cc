@@ -27,68 +27,100 @@ bool verilator::has_pending_irq() {
 
   if ( ipc->irq_in == 1) {
     ipc->irq_in = 0;
+    printf("* ***** * * * * * *IRQ * ** * * * * * * * * * *\n");
     return true;
   }
-
   return false;
 };
 
+int32_t verilator::get_active_irq() {
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+  
+  while((ipc->status == 'B') || (ipc->status == 'P'));
+
+  uint32_t address = 0x43c20000; 
+
+  ipc->address  = address;
+  ipc->type   = 'R';
+  ipc->status   = 'P';
+
+  while((ipc->status != 'K'));
+
+  klee_warning("verilator::read(%08x, %08x)", address, ipc->value);
+
+  return (int32_t)(ipc->value & 0x7);
+}
+
 void verilator::write(uint32_t address, uint32_t data) {
 
-  //klee_warning("verilator::write(%08x, %08x)", address, data);
+  klee_warning("verilator::write(%08x, %08x)", address, data);
 
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+
+  while((ipc->status == 'B') || (ipc->status == 'P'));
 
   ipc->value    = data;
   ipc->address  = address;
   ipc->type   = 'W';
-  ipc->status   = 0x50;
+  ipc->status   = 'P';
 }
 
 uint32_t verilator::read(uint32_t address) {
-  
-  //klee_warning("verilator::read(%08x, %08x)", address);
-  
+
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+
+  while((ipc->status == 'B') || (ipc->status == 'P'));
 
   ipc->address  = address;
   ipc->type   = 'R';
-  ipc->status   = 0x50;
+  ipc->status   = 'P';
 
-  while((ipc->status == 0x50) || (ipc->status == 0x42));
+  while((ipc->status != 'K'));
+
+  klee_warning("verilator::read(%08x, %08x)", address, ipc->value);
 
   return ipc->value;
 }
 
 void verilator::init() {
 
-  pid = fork();
-  if (pid == 0)
-  {
-      // replace son memory with binary binary
-      char *args_execv[] = {(char*)binary.c_str(),NULL};
-      execv(binary.c_str(), args_execv);
-      _exit(1);
-  }
-  else if (pid > 0)
-  {
-       // do nothing here, we are the parent
-  }
-  else
-  {
-      perror("fork failed");
-      _exit(3);
-  }
-
+  //pid = fork();
+  //if (pid == 0)
+  //{
+  //    // replace son memory with binary binary
+  //    char *args_execv[] = {(char*)binary.c_str(),(char*)args.c_str(), NULL};
+  //    execv(binary.c_str(), args_execv);
+  //    _exit(1);
+  //}
+  //else if (pid > 0)
+  //{
+  //     // do nothing here, we are the parent
+  //}
+  //else
+  //{
+  //    perror("fork failed");
+  //    _exit(3);
+  //}
+  
   int sync_mem = shm_open("/sync_fifo", O_CREAT|O_RDWR, 0777);
   if(sync_mem == -1){
     klee_error("unable to create IPC shared memory (verilator com. channel)");
   }
 
+  ftruncate(sync_mem, 512);
+
   ipc_ptr = (u_char *) mmap(NULL, 14, PROT_READ|PROT_WRITE, MAP_SHARED, sync_mem, 0);
   if (ipc_ptr == MAP_FAILED) {
     klee_error("unable to create IPC shared memory (verilator com. channel)");
   }
+
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+  ipc->irq_in  = 0;
+  ipc->irq_ack = 0;
+  ipc->address = 0;
+  ipc->type    = 0;
+  ipc->value   = 0;
+  ipc->status  = 0;
 
 }
 
@@ -96,14 +128,13 @@ void verilator::close() {
   int status;
 
   munmap(ipc_ptr, 14);
-  
-  klee_warning("closing target: verilator...");
-  
-  kill(pid, SIGKILL);
-  if (waitpid (pid, &status, 0) < 0) {
-    perror ("waitpid");
-  }
 
+  klee_warning("closing target: verilator...");
+
+  //kill(pid, SIGINT);
+  //if (waitpid (pid, &status, 0) < 0) {
+  //  perror ("waitpid");
+  //}
 }
 
 klee::ref<Expr> verilator::read(klee::ref<Expr> address, klee::Expr::Width w) {

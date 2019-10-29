@@ -28,6 +28,9 @@ class jlink : public Target {
   void write(uint32_t address, uint32_t data);
   
   bool has_pending_irq() { return false;};
+
+  int32_t get_active_irq() { return -1;};
+
 };
 
 #endif

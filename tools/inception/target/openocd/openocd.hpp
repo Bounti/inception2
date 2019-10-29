@@ -155,6 +155,8 @@ class openocd : public Target {
   
   bool has_pending_irq() { return false;};
 
+  int32_t get_active_irq() { return -1;};
+
 };
 
 #endif

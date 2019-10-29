@@ -71,8 +71,14 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
     for (it = executor->targets.begin() ; it != executor->targets.end(); ++it) {
       Target* target = *it;
-      if( target->has_pending_irq() )
-        printf("[Trace] *******************************  *Interrupt  ********************************\n");
+      if( target->has_pending_irq() ) {
+        uint32_t irq_id = target->get_active_irq();
+
+        if( irq_id != -1 ) {
+          executor->push_irq(irq_id);
+          klee_warning("[Trace] *******************************  *Interrupt %d ********************************\n", irq_id);
+        }
+      }
     }
 
     //error_code |= buffer[0] << 24;
@@ -98,7 +104,7 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
 
   Target* target = NULL;
-  
+
   if( resolve_target(name) != NULL )
     return;
 
@@ -108,7 +114,7 @@ void InceptionExecutor::add_target(std::string name, std::string type, std::stri
     target = new jlink();
     target->setArgs(args);
   } else if( name.compare("openocd") == 0 ) {
-    target = new openocd(); 
+    target = new openocd();
     target->setArgs(args);
   } else if( name.compare("verilator") == 0 ) {
     target = new verilator();
@@ -199,7 +205,7 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
   else if( isSymbolic )
     executeMakeSymbolic(*init_state, mo, name);
   else if( isForwarded ) {
-    
+
     os->initializeToZero();
 
     Target* target = resolve_target(target_name);
@@ -597,7 +603,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
         } else {
           success = true;
           klee_message("mapping object %s to device address %016lx", v->getName().str().c_str(), device_address);
-        } 
+        }
       }
 
       if( success ){
@@ -610,7 +616,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
                                           /*alignment=*/globalObjectAlignment);
         klee_message("object %s to address %016lx", v->getName().str().c_str(), mo->address);
 
-      } 
+      }
 
       if (!mo)
         llvm::report_fatal_error("out of memory");
@@ -707,22 +713,22 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
 
 
           std::map<uint64_t, Target*>::iterator it;
-          
+
           it = forwarded_mem.find(mo->address);
           if (it != forwarded_mem.end()) {
             Target* device = it->second;
-            
+
             device->write(address, value, type);
           }
         }
       } else {
-  
+
         std::map<uint64_t, Target*>::iterator it;
-        
+
         it = forwarded_mem.find(mo->address);
         if (it != forwarded_mem.end()) {
           Target* device = it->second;
-          
+
           ref<Expr> result = device->read(address, type);
 
           bindLocal(target, state, result);
@@ -901,7 +907,7 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   irq_running = true;
   irq_handler_thread = new std::thread(irq_handler, io_irq, this);
   irq_handler_thread->detach();
-  
+
   bindModuleConstants();
 
   // Delay init till now so that ticks don't accrue during
@@ -920,17 +926,19 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
 
-    /*if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
-      for (std::map<uint32_t,uint32_t>::iterator it=irq_model.begin(); it!=irq_model.end(); ++it) {
+    //if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
+    if( interrupted_states.count(&state) == 0 ) {
+      serve_pending_interrupt(&state);
+      /*for (std::map<uint32_t,uint32_t>::iterator it=irq_model.begin(); it!=irq_model.end(); ++it) {
 
         if((instructions_counter % it->second) == 0) {
           // We use the interrupt stack to keep compatibility with real device interrupt controller
           push_irq(it->first);
           serve_pending_interrupt(&state);
         }
-      }
+      }*/
 
-    }*/
+    }
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
