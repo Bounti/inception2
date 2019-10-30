@@ -77,6 +77,8 @@ public:
 
   int32_t get_active_irq() { return -1;};
 
+  void irq_ack() {};
+
 private:
 
   void device_open();

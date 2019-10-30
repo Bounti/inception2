@@ -63,7 +63,7 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
   while(irq_running) {
 
     //uint8_t buffer[8] = {0};
-    uint32_t value=0;
+    //uint32_t value=0;
     //uint32_t error_code;
 
     //io_irq->receive(buffer, 8);
@@ -76,8 +76,7 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
         if( irq_id != -1 ) {
           executor->push_irq(irq_id);
-          klee_warning("[Trace] *******************************  *Interrupt %d ********************************\n", irq_id);
-        }
+      }
       }
     }
 
@@ -93,10 +92,10 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
     //printf("[Trace] Interrupt error_code : %08x\n", error_code);
 
-    if(value != 0) {
-      executor->push_irq(value);
-      printf("[Trace] Interrupt ID : %08x\n", value);
-    }
+    //if(value != 0) {
+    //  executor->push_irq(value);
+    //  printf("[Trace] Interrupt ID : %08x\n", value);
+    //}
   }
   irq_running = true;
 }
@@ -363,14 +362,17 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
 
     bool interrupted = false;
-    if( interrupted_states.count(&state) != 0 ) {
+    std::map<ExecutionState*,Function*>::iterator it;
+    it = interrupted_states.find(&state);
+    if(it != interrupted_states.end() && it->second == caller->getParent()->getParent()) {
+      interrupted_states.erase(it);
+      interrupted = true;
 
-      std::map<ExecutionState*,Function*>::iterator it;
-      it = interrupted_states.find(&state);
-      if(it != interrupted_states.end() && it->second == caller->getParent()->getParent()) {
-        interrupted_states.erase(it);
-        interrupted = true;
-      }
+      std::vector<Target*>::iterator it;
+      for (it = targets.begin() ; it != targets.end(); ++it) {
+        Target* target = *it;
+        target->irq_ack();
+      } 
     }
 
 
@@ -822,13 +824,13 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
 
   Function* caller = current->pc->inst->getParent()->getParent();
 
-  interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller));
-
   // return if the caller is one klee or inception function that should be
   // atomic
   if (caller->getName().find("klee_") != std::string::npos ||
       caller->getName().find("inception_") != std::string::npos)
     return;
+
+  interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller));
 
   // get the pending interrupt
   uint32_t current_interrupt = pending_interrupts.top();
@@ -851,7 +853,8 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
  {
     // the generic handler takes as parameter the address of the interrupt
     // vector location in which to look for the handler address
-    uint32_t vector_address = 0x10000000 + (current_interrupt << 2);
+    //TODO: avoid hardwire
+    uint32_t vector_address = 0x100000 + (current_interrupt << 2);
 
     klee::ref<klee::Expr> Vector_address =
         klee::ConstantExpr::create(vector_address, Expr::Int32);
@@ -1056,6 +1059,7 @@ void InceptionExecutor::start_analysis() {
   processTree = new PTree(init_state);
   init_state->ptreeNode = processTree->root;
   run(*init_state);
+ 
   delete processTree;
   processTree = 0;
 

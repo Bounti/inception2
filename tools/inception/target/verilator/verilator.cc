@@ -5,102 +5,129 @@
 #include <fcntl.h>           /* For O_* constants */
 #include <signal.h>
 #include <sys/wait.h>
+#include <mutex>
+#include <thread>
 
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "klee/Expr.h"
 
 using namespace klee;
 
-typedef struct {
-  uint8_t irq_in;
-  uint8_t irq_ack;
+std::mutex io_mutex;
 
+typedef struct {
+  uint8_t irq_status;
   uint32_t address;
   uint8_t  type;
   uint32_t value;
   uint8_t  status;
 }IPC_MESSAGE;
 
+void verilator::irq_ack() {
+  klee_warning("ack...");
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+  ipc->irq_status = 'K';
+  klee_warning("done");
+}
+
 bool verilator::has_pending_irq() {
 
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
 
-  if ( ipc->irq_in == 1) {
-    ipc->irq_in = 0;
-    printf("* ***** * * * * * *IRQ * ** * * * * * * * * * *\n");
+  if ( ipc->irq_status == 'P') {
+    ipc->irq_status = 'A';
+    printf("***************************************************IRQ*********************************************************\n");
     return true;
   }
   return false;
-};
+}
 
 int32_t verilator::get_active_irq() {
-  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
-  
-  while((ipc->status == 'B') || (ipc->status == 'P'));
+  //TODO: avoid hardwire
+  uint32_t address = 0x43c20000;
+  uint32_t value = 0;
 
-  uint32_t address = 0x43c20000; 
+  io_mutex.lock();
+  {
+    IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
 
-  ipc->address  = address;
-  ipc->type   = 'R';
-  ipc->status   = 'P';
+    while((ipc->status == 'B') || (ipc->status == 'P'));
 
-  while((ipc->status != 'K'));
+    ipc->address  = address;
+    ipc->type   = 'R';
+    ipc->status   = 'P';
 
-  klee_warning("verilator::read(%08x, %08x)", address, ipc->value);
+    while((ipc->status != 'K'));
 
-  return (int32_t)(ipc->value & 0x7);
+    value = ipc->value;
+  }
+  io_mutex.unlock();
+
+  klee_warning("verilator::read(%08x, %08x)", address, value);
+
+  return (int32_t)(value & 0x7);
 }
 
 void verilator::write(uint32_t address, uint32_t data) {
-
   klee_warning("verilator::write(%08x, %08x)", address, data);
+  
+  io_mutex.lock();
+  {
+    IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
 
-  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+    while((ipc->status == 'B') || (ipc->status == 'P'));
 
-  while((ipc->status == 'B') || (ipc->status == 'P'));
-
-  ipc->value    = data;
-  ipc->address  = address;
-  ipc->type   = 'W';
-  ipc->status   = 'P';
+    ipc->value    = data;
+    ipc->address  = address;
+    ipc->type   = 'W';
+    ipc->status   = 'P'; 
+  }
+  io_mutex.unlock();
 }
 
 uint32_t verilator::read(uint32_t address) {
+  uint32_t value = 0;
+  
+  io_mutex.lock();
+  {
+    IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
 
-  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+    while((ipc->status == 'B') || (ipc->status == 'P'));
 
-  while((ipc->status == 'B') || (ipc->status == 'P'));
+    ipc->address  = address;
+    ipc->type   = 'R';
+    ipc->status   = 'P';
 
-  ipc->address  = address;
-  ipc->type   = 'R';
-  ipc->status   = 'P';
+    while((ipc->status != 'K')); 
 
-  while((ipc->status != 'K'));
+    value = ipc->value; 
+  }
+  io_mutex.unlock();
 
-  klee_warning("verilator::read(%08x, %08x)", address, ipc->value);
+  klee_warning("verilator::read(%08x, %08x)", address, value);
 
-  return ipc->value;
+  return value;
 }
 
 void verilator::init() {
 
-  //pid = fork();
-  //if (pid == 0)
-  //{
-  //    // replace son memory with binary binary
-  //    char *args_execv[] = {(char*)binary.c_str(),(char*)args.c_str(), NULL};
-  //    execv(binary.c_str(), args_execv);
-  //    _exit(1);
-  //}
-  //else if (pid > 0)
-  //{
-  //     // do nothing here, we are the parent
-  //}
-  //else
-  //{
-  //    perror("fork failed");
-  //    _exit(3);
-  //}
+  pid = fork();
+  if (pid == 0)
+  {
+      // replace son memory with binary binary
+      char *args_execv[] = {(char*)binary.c_str(),(char*)args.c_str(), NULL};
+      execv(binary.c_str(), args_execv);
+      _exit(1);
+  }
+  else if (pid > 0)
+  {
+       // do nothing here, we are the parent
+  }
+  else
+  {
+      perror("fork failed");
+      _exit(3);
+  }
   
   int sync_mem = shm_open("/sync_fifo", O_CREAT|O_RDWR, 0777);
   if(sync_mem == -1){
@@ -114,13 +141,14 @@ void verilator::init() {
     klee_error("unable to create IPC shared memory (verilator com. channel)");
   }
 
+  //std::this_thread::sleep_for (std::chrono::seconds(2)); 
+
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
-  ipc->irq_in  = 0;
-  ipc->irq_ack = 0;
-  ipc->address = 0;
-  ipc->type    = 0;
-  ipc->value   = 0;
-  ipc->status  = 0;
+  ipc->irq_status  = 0;
+  ipc->address     = 0;
+  ipc->type        = 0;
+  ipc->value       = 0;
+  ipc->status      = 0;
 
 }
 
@@ -131,10 +159,10 @@ void verilator::close() {
 
   klee_warning("closing target: verilator...");
 
-  //kill(pid, SIGINT);
-  //if (waitpid (pid, &status, 0) < 0) {
-  //  perror ("waitpid");
-  //}
+  kill(pid, SIGINT);
+  if (waitpid (pid, &status, 0) < 0) {
+    perror ("waitpid");
+  }
 }
 
 klee::ref<Expr> verilator::read(klee::ref<Expr> address, klee::Expr::Width w) {

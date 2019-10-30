@@ -42,6 +42,8 @@ class Target {
 
   virtual int32_t get_active_irq() = 0;
 
+  virtual void irq_ack() = 0;
+
 };
 
 #endif

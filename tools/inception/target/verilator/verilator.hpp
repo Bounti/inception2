@@ -34,6 +34,8 @@ class verilator : public Target {
     bool has_pending_irq();
 
     int32_t get_active_irq();
+
+    void irq_ack();
 };
 
 #endif

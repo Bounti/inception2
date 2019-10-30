@@ -84,6 +84,9 @@ ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
     : constraints(assumptions), ptreeNode(0) {}
 
 ExecutionState::~ExecutionState() {
+
+  printf("Destroy execution state %p\n", this);
+  
   for (unsigned int i=0; i<symbolics.size(); i++)
   {
     const MemoryObject *mo = symbolics[i].first;

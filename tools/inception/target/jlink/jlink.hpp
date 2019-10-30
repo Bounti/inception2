@@ -31,6 +31,7 @@ class jlink : public Target {
 
   int32_t get_active_irq() { return -1;};
 
+  void irq_ack() {};
 };
 
 #endif

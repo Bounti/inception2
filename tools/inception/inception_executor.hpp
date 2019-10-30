@@ -90,10 +90,11 @@ class InceptionExecutor : public Executor{
   void add_target(std::string name, std::string type, std::string binary, std::string args);
 
   void shutdown() {
+
     irq_running = false;
     while(irq_running == false);
-    std::vector<Target*>::iterator it;  
-    
+     
+    std::vector<Target*>::iterator it;     
     for (it = targets.begin() ; it != targets.end(); ++it) {
       Target* target = *it;
       target->close();
