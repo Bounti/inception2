@@ -61,7 +61,7 @@ usb3dap::usb3dap(uint16_t p_vid, uint16_t p_pid, uint32_t p_interface,
 
 usb3dap::~usb3dap() {}
 
-void usb3dap::close(void) { device_close(); }
+void usb3dap::shutdown(void) { device_close(); }
 
 void usb3dap::device_open() {
 

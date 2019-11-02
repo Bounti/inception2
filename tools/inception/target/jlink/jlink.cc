@@ -193,7 +193,7 @@ void jlink::init() {
   JLINKARM_Halt();
 }
 
-void jlink::close() {
+void jlink::shutdown() {
   JLINK_Close();
 }
 

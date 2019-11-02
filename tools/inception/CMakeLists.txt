@@ -41,6 +41,7 @@ set(LLVM_COMPONENTS
 )
 
 target_include_directories(inception PRIVATE target/)
+#target_include_directories(inception PRIVATE /home/nasm/Projects/IP4Verilator/criu/lib/c/)
 
 klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
 

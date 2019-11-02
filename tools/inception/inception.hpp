@@ -54,6 +54,12 @@
 #include "klee/Internal/Module/LLVMPassManager.h"
 
 #include "inception_executor.hpp"
+#include "target/target.hpp"
+
+#include "target/openocd/openocd.hpp"
+#include "target/jlink/jlink.hpp"
+#include "target/verilator/verilator.hpp"
+#include "target/usb3dap/usb3dap.hpp"
 
 using namespace llvm;
 using namespace klee;
@@ -64,7 +70,11 @@ public:
     mainModule = NULL;
     divergence = 1;
     main_fct = NULL;
+    handler = NULL;
+    interpreter = NULL;
+  }
 
+  void init() {
     // For now, it is fixed here but it could be programmed by users
     Interpreter::InterpreterOptions IOpts;
     IOpts.MakeConcreteSymbolic = false;
@@ -78,13 +88,18 @@ public:
     interpreter = new InceptionExecutor(ctx, IOpts, handler);
 
     handler->setInterpreter(interpreter);
-  };
+
+    std::vector<Target*>::iterator it;  
+    
+    for (it = targets.begin() ; it != targets.end(); ++it) {
+      Target* target = *it;
+      interpreter->add_target(target);
+    } 
+  }
 
   ~Inception() { shutdown(); };
 
-  void add_target(Target* io_device, device* irq_device){
-    interpreter->add_target(io_device, irq_device);
-  }
+  void add_target(std::string name, std::string type, std::string binary, std::string args);
 
   void load_configuration(char **argv) {
 
@@ -168,6 +183,22 @@ private:
   bool interrupted = false;
 
   std::string bc_file_name;
+
+  std::vector<Target*> targets;
+
+  Target* resolve_target(std::string name) {
+
+    std::vector<Target*>::iterator it;  
+    
+    for (it = targets.begin() ; it != targets.end(); ++it) {
+      Target* target = *it;
+      if( target->getName().compare(name) == 0)
+        return target;
+    }
+
+    return NULL;
+  }
+
 };
 
 #endif

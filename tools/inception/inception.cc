@@ -84,7 +84,7 @@ void Inception::load_targets_conf_from_file(const char* _targets_conf_file) {
       std::string binary       = it->get("binary", "").asString();
       std::string args         = it->get("args", "").asString();
 
-      interpreter->add_target(name, type, binary, args);
+      add_target(name, type, binary, args);
     }
 
   } else {
@@ -235,3 +235,35 @@ void Inception::start_analysis() {
 
   interpreter->start_analysis();
 }
+
+void Inception::add_target(std::string name, std::string type, std::string binary, std::string args) {
+
+  Target* target = NULL;
+
+  if( resolve_target(name) != NULL )
+    return;
+
+  if( name.compare("usb3_dap") == 0 ) {
+    target = new usb3dap();
+  } else if ( name.compare("jlink") == 0 ) {
+    target = new jlink();
+    target->setArgs(args);
+  } else if( name.compare("openocd") == 0 ) {
+    target = new openocd();
+    target->setArgs(args);
+  } else if( name.compare("verilator") == 0 ) {
+    target = new verilator();
+    target->setBinary(binary);
+    target->setArgs(args);
+  }
+
+  if(target == NULL) {
+    klee_error("targets configuration does not support %s", type);
+  } else {
+    klee_message("adding target %s", type.c_str());
+    target->setName(name);
+    target->init();
+    targets.push_back(target);
+  }
+}
+

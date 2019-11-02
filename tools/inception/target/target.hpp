@@ -32,11 +32,13 @@ class Target {
 
   virtual void init() = 0;
 
-  virtual void close() = 0;
+  virtual void shutdown() = 0;
 
-  virtual uint32_t save() = 0;
+  virtual uint32_t save(uint32_t id=0) = 0;
 
   virtual void restore(uint32_t id) = 0;
+
+  virtual void remove(uint32_t id) = 0;
 
   virtual bool has_pending_irq() = 0;
 

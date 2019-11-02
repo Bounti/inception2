@@ -49,9 +49,9 @@ static void parseArguments(int argc, char **argv) {
 
 int main(int argc, char **argv) {
 
-  Target* io     = NULL;
-  device* io_snp = NULL;
-  device* irq_io = NULL;
+  //Target* io     = NULL;
+  //device* io_snp = NULL;
+  //device* irq_io = NULL;
 
   // Call llvm_shutdown() on exit.
   atexit(llvm_shutdown);
@@ -72,6 +72,7 @@ int main(int argc, char **argv) {
   // 5. We load the configuration
   inception->load_targets_conf_from_file(mem_conf_file.c_str());
 
+  inception->init();
 
   //if( enable_hw_snapshot ) {
 

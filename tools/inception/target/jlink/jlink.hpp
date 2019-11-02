@@ -17,9 +17,9 @@ class jlink : public Target {
 
   void init();
 
-  void close();
+  void shutdown();
 
-  uint32_t save() { return 0;};
+  uint32_t save(uint32_t id=0) { return 0;};
 
   void restore(uint32_t id) {};
 
@@ -32,6 +32,9 @@ class jlink : public Target {
   int32_t get_active_irq() { return -1;};
 
   void irq_ack() {};
+
+  void remove(uint32_t id) {};
+
 };
 
 #endif

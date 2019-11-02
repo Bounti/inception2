@@ -76,7 +76,7 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
 
         if( irq_id != -1 ) {
           executor->push_irq(irq_id);
-      }
+        }
       }
     }
 
@@ -98,37 +98,6 @@ void irq_handler(device* io_irq, InceptionExecutor* executor) {
     //}
   }
   irq_running = true;
-}
-
-void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
-
-  Target* target = NULL;
-
-  if( resolve_target(name) != NULL )
-    return;
-
-  if( name.compare("usb3_dap") == 0 ) {
-    target = new usb3dap();
-  } else if ( name.compare("jlink") == 0 ) {
-    target = new jlink();
-    target->setArgs(args);
-  } else if( name.compare("openocd") == 0 ) {
-    target = new openocd();
-    target->setArgs(args);
-  } else if( name.compare("verilator") == 0 ) {
-    target = new verilator();
-    target->setBinary(binary);
-    target->setArgs(args);
-  }
-
-  if(target == NULL) {
-    klee_error("targets configuration does not support %s", type);
-  } else {
-    klee_message("adding target %s", type.c_str());
-    target->setName(name);
-    target->init();
-    targets.push_back(target);
-  }
 }
 
 object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
@@ -435,9 +404,82 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     }
     break;
   }
-    default:
+  case Instruction::Br: {
+    BranchInst *bi = cast<BranchInst>(i);
+    if (bi->isUnconditional()) {
+      transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), state);
+    } else {
+      // FIXME: Find a way that we don't have this hidden dependency.
+      assert(bi->getCondition() == bi->getOperand(0) &&
+             "Wrong operand index!");
+      ref<Expr> cond = eval(ki, 0, state).value;
+
+      cond = optimizer.optimizeExpr(cond, false);
+      Executor::StatePair branches = fork(state, cond, false);
+
+      //XXX: create hardware snapshot for the new states
+      update_hw_state(branches.first);
+      update_hw_state(branches.second);
+
+      // NOTE: There is a hidden dependency here, markBranchVisited
+      // requires that we still be in the context of the branch
+      // instruction (it reuses its statistic id). Should be cleaned
+      // up with convenient instruction specific data.
+      if (statsTracker && state.stack.back().kf->trackCoverage)
+        statsTracker->markBranchVisited(branches.first, branches.second);
+
+      if (branches.first)
+        transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), *branches.first);
+      if (branches.second)
+        transferToBasicBlock(bi->getSuccessor(1), bi->getParent(), *branches.second);
+    }
+    break;
+  }  
+  default:
      Executor::executeInstruction(state, ki);
     break;
+  }
+}
+
+void InceptionExecutor::update_hw_state(ExecutionState* state) {
+
+  uint64_t hw_id = 0;
+
+  std::map<ExecutionState*, uint32_t>::iterator it;
+ 
+  if(state == NULL)
+    return;
+
+  it = sw_to_hw.find(state);
+  if(it != sw_to_hw.end())
+   hw_id = it->second;
+ 
+  if ( hw_id == 0) {
+    //klee_message("    creating hw state for %d with id %d", state, hw_id);
+    // First time we create a snapshot for this state
+    std::vector<Target*>::iterator it_tg;
+    for (it_tg = targets.begin() ; it_tg != targets.end(); ++it_tg) {
+      Target* target = *it_tg;
+      hw_id = target->save();
+      break;
+    }
+    sw_to_hw.insert(std::pair<ExecutionState*, uint32_t>(state, hw_id));
+  } else {
+    
+    return;
+    /*
+     * For now, we support only one active target at a time.
+     * Does it make sens to support more than one ?
+     * TODO: set active flag on target
+     */
+    std::vector<Target*>::iterator it_tg;
+    for (it_tg = targets.begin() ; it_tg != targets.end(); ++it_tg) {
+      Target* target = *it_tg;
+      hw_id = target->save(hw_id);
+      break;
+    }
+    it->second = hw_id;  
+    //klee_message("    updating hw state for %d with id %d", state, hw_id);
   }
 }
 
@@ -902,6 +944,81 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
  }
 
 /*
+ * Brief: this function sanitize the hw state so that it follows sw execution.
+ * Each time the state heuristic select a different execution path, this save
+ * and restore hw state.
+ */
+void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state) {
+
+  static ExecutionState *previous_state = NULL;
+
+  uint64_t current_hw_id = 0;
+  uint64_t last_hw_id    = 0;
+
+  std::map<ExecutionState*, uint32_t>::iterator it_old;
+  std::map<ExecutionState*, uint32_t>::iterator it_new;
+  
+  it_new = sw_to_hw.find(current_state);
+  if(it_new != sw_to_hw.end())
+    current_hw_id = it_new->second;
+ 
+  it_old = sw_to_hw.find(previous_state);
+  if(it_old != sw_to_hw.end())
+    last_hw_id = it_old->second; 
+  
+  if (previous_state == NULL) {
+    previous_state = current_state;
+  } else {
+    // We are moving to a different path
+    if (previous_state != current_state) {
+      klee_message("Switching sw state from %d to %d", previous_state, current_state);
+
+      // do we have a hw snapshot associated to the old path ? 
+      if ( last_hw_id != 0) {
+        //klee_message("    previous state has already a hw snp on storage, updating...");
+
+        /*
+         * For now, we support only one active target at a time.
+         * Does it make sens to support more than one ?
+         * TODO: set active flag on target
+         */
+        std::vector<Target*>::iterator it;
+        for (it = targets.begin() ; it != targets.end(); ++it) {
+          Target* target = *it;
+          last_hw_id = target->save(last_hw_id);
+          break;
+        }
+        it_old->second = last_hw_id; 
+        // update id in global database
+      } else {
+        //klee_message("    previous state has no hw snp on storage...");
+
+        std::vector<Target*>::iterator it;
+        for (it = targets.begin() ; it != targets.end(); ++it) {
+          Target* target = *it;
+          last_hw_id = target->save();
+          break;
+        }
+        sw_to_hw.insert(std::pair<ExecutionState*, uint64_t>(previous_state, last_hw_id));
+      }
+
+      if(current_hw_id != 0) {
+        //klee_message("    restoring hw snp for state %d with id %d", current_state, current_hw_id);
+        std::vector<Target*>::iterator it;
+        for (it = targets.begin() ; it != targets.end(); ++it) {
+          Target* target = *it;
+          target->restore(current_hw_id);
+          break;
+        }
+      } else {
+        klee_error("    no hw snp on storage for %d, using running design", current_state);
+      }
+      previous_state = current_state;
+    }
+  }
+}
+
+/*
  * Overriding the run method, enables Inception to force the execution of interrupt when one is pending.
  * Futermore, it enables overriding subsequent methods such as executeMemoryOperation
 */
@@ -928,6 +1045,8 @@ void InceptionExecutor::run(ExecutionState &initialState) {
 
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
+ 
+    sanitize_hw_state(&state);
 
     //if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
     if( interrupted_states.count(&state) == 0 ) {

@@ -59,6 +59,8 @@ class InceptionExecutor : public Executor{
   std::stack<uint32_t> pending_interrupts;
 
   std::map<ExecutionState*, Function*> interrupted_states;
+  
+  std::map<ExecutionState*, uint32_t> sw_to_hw;
 
   void serve_pending_interrupt(ExecutionState* state);
 
@@ -84,8 +86,16 @@ class InceptionExecutor : public Executor{
 
     return NULL;
   }
+ 
+  void sanitize_hw_state(ExecutionState* current_state);
+
+  void update_hw_state(ExecutionState* state);
 
   public:
+  
+  void add_target(Target* target) {
+    targets.push_back(target);
+  }
 
   void add_target(std::string name, std::string type, std::string binary, std::string args);
 
@@ -97,7 +107,7 @@ class InceptionExecutor : public Executor{
     std::vector<Target*>::iterator it;     
     for (it = targets.begin() ; it != targets.end(); ++it) {
       Target* target = *it;
-      target->close();
+      target->shutdown();
     }
   }
 

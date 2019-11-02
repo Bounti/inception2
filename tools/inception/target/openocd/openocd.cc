@@ -344,7 +344,7 @@ void openocd::init() {
   return;
 }
 
-void openocd::close() {
+void openocd::shutdown() {
   int ret;
   
   unregister_all_commands(cmd_ctx, NULL);
