@@ -161,6 +161,10 @@ class openocd : public Target {
 
   void remove(uint32_t id) {};
 
+  void resume() {};
+
+  void halt() {};
+
 };
 
 #endif

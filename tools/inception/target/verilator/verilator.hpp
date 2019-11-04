@@ -16,6 +16,8 @@ typedef struct {
   uint8_t  type;
   uint32_t value;
   uint8_t  status;
+  uint8_t  requested_mode;
+  uint8_t  mode;
 }IPC_MESSAGE;
 
 class verilator : public Target {
@@ -126,6 +128,10 @@ public:
     void irq_ack();
 
     void remove(uint32_t id);
+
+    void resume();
+
+    void halt();
 };
 
 #endif

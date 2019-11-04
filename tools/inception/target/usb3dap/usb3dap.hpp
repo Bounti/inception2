@@ -81,6 +81,10 @@ public:
   
   void remove(uint32_t id) {};
 
+  void resume() {};
+
+  void halt() {};
+
 private:
 
   void device_open();

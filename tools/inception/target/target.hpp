@@ -46,6 +46,10 @@ class Target {
 
   virtual void irq_ack() = 0;
 
+  virtual void halt() = 0;
+
+  virtual void resume() = 0;
+
 };
 
 #endif

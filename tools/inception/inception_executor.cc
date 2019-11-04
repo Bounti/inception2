@@ -971,7 +971,7 @@ void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state) {
   } else {
     // We are moving to a different path
     if (previous_state != current_state) {
-      klee_message("Switching sw state from %d to %d", previous_state, current_state);
+      klee_message("Switching sw state from %d [%d] to %d [%d]", previous_state, last_hw_id, current_state, current_hw_id);
 
       // do we have a hw snapshot associated to the old path ? 
       if ( last_hw_id != 0) {
@@ -1024,9 +1024,9 @@ void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state) {
 */
 void InceptionExecutor::run(ExecutionState &initialState) {
 
-  irq_running = true;
-  irq_handler_thread = new std::thread(irq_handler, io_irq, this);
-  irq_handler_thread->detach();
+  //irq_running = true;
+  //irq_handler_thread = new std::thread(irq_handler, io_irq, this);
+  //irq_handler_thread->detach();
 
   bindModuleConstants();
 
@@ -1041,37 +1041,85 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
-  instructions_counter = 0;
+  ExecutionState* state = NULL;
 
+  Target* target = get_active_target();
+  
   while (!states.empty() && !haltExecution) {
-    ExecutionState &state = searcher->selectState();
- 
-    sanitize_hw_state(&state);
+    uint32_t irq_id = 0;
 
-    //if( instructions_counter > min_irq_threshold && interrupted_states.count(&state) == 0 ) {
-    if( interrupted_states.count(&state) == 0 ) {
-      serve_pending_interrupt(&state);
-      /*for (std::map<uint32_t,uint32_t>::iterator it=irq_model.begin(); it!=irq_model.end(); ++it) {
+    //target->halt();
+    //target->resume();
 
-        if((instructions_counter % it->second) == 0) {
-          // We use the interrupt stack to keep compatibility with real device interrupt controller
-          push_irq(it->first);
-          serve_pending_interrupt(&state);
-        }
-      }*/
+    if( target->has_pending_irq() ) {
+      irq_id = target->get_active_irq();
 
+      if( irq_id != 0 ) {
+        klee_warning("pending irq %d", irq_id);
+        push_irq(irq_id);
+      }
     }
-    KInstruction *ki = state.pc;
-    stepInstruction(state);
 
-    executeInstruction(state, ki);
+    /*
+     * Our target raises interrupt signal asynchronously. For all supported
+     * targets there is an irq channel that is not part of the snapshot and
+     * therefore is not synchronized. To avoid inconsistencies, we need to fill
+     * pending interrupt before any state switching. 
+     */
+    if ( state == NULL || (pending_interrupts.empty() && interrupted_states.count(state) == 0)  ) {
+      state = &(searcher->selectState());
+
+      sanitize_hw_state(state);
+    }
+ 
+    if( state != NULL && interrupted_states.count(state) == 0 ) {
+      serve_pending_interrupt(state);
+    }
+
+    KInstruction *ki = state->pc;
+    stepInstruction(*state);
+
+    executeInstruction(*state, ki);
     //processTimers(&state, maxInstructionTime);
 
     checkMemoryUsage();
 
-    updateStates(&state);
-    instructions_counter++;
+    updateStates(state);
+   // instructions_counter++;
   }
+
+  //while (!states.empty() && !haltExecution) {
+  //  ExecutionState &state = searcher->selectState();
+
+  //  std::vector<Target*>::iterator it;
+  //  for (it = targets.begin() ; it != targets.end(); ++it) {
+  //    Target* target = *it;
+  //    if( target->has_pending_irq() ) {
+  //      uint32_t irq_id = target->get_active_irq();
+
+  //      if( irq_id != -1 ) {
+  //        push_irq(irq_id);
+  //      }
+  //    }
+  //  }
+
+  //  sanitize_hw_state(&state);
+
+  //  if( interrupted_states.count(&state) == 0 ) {
+  //    serve_pending_interrupt(&state);
+  //  }
+
+  //  KInstruction *ki = state.pc;
+  //  stepInstruction(state);
+
+  //  executeInstruction(state, ki);
+  //  //processTimers(&state, maxInstructionTime);
+
+  //  checkMemoryUsage();
+
+  //  updateStates(&state);
+  //  instructions_counter++;
+  //}
 
   delete searcher;
   searcher = 0;

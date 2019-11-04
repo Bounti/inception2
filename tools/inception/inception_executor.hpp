@@ -91,8 +91,17 @@ class InceptionExecutor : public Executor{
 
   void update_hw_state(ExecutionState* state);
 
-  public:
+  Target* get_active_target() {
   
+    std::vector<Target*>::iterator it;
+    for (it = targets.begin() ; it != targets.end(); ++it) {
+      Target* target = *it;
+    
+      return target;
+    } 
+  }
+
+  public:
   void add_target(Target* target) {
     targets.push_back(target);
   }
@@ -101,8 +110,8 @@ class InceptionExecutor : public Executor{
 
   void shutdown() {
 
-    irq_running = false;
-    while(irq_running == false);
+    //irq_running = false;
+    //while(irq_running == false);
      
     std::vector<Target*>::iterator it;     
     for (it = targets.begin() ; it != targets.end(); ++it) {

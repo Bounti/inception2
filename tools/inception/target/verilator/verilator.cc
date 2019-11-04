@@ -183,12 +183,13 @@ void verilator::init() {
   //std::this_thread::sleep_for (std::chrono::seconds(2)); 
 
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
-  ipc->irq_status  = 0;
-  ipc->address     = 0;
-  ipc->type        = 0;
-  ipc->value       = 0;
-  ipc->status      = 0;
-
+  ipc->irq_status     = 0;
+  ipc->address        = 0;
+  ipc->type           = 0;
+  ipc->value          = 0;
+  ipc->status         = 0;
+  ipc->mode           = 0;
+  ipc->requested_mode = 0;
 }
 
 void verilator::shutdown() {
@@ -503,4 +504,35 @@ void verilator::restore(uint32_t id) {
   close(fd);
 }
 
+void verilator::resume() {
 
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+  ipc->requested_mode     = 'R';
+
+  unsigned attempt = 0;
+  while(ipc->mode != 'R' && attempt<10000) {
+    attempt++;
+  }
+
+  if(attempt >= 10000) {
+    klee_warning("irq_status     = %c",   ipc->irq_status);
+    klee_warning("requested_mode = %c",   ipc->requested_mode);
+    klee_warning("mode           = %c",   ipc->mode); 
+    klee_error("unable to resume target... irq channel busy");
+  }
+}
+
+void verilator::halt() {
+
+  IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
+  ipc->requested_mode     = 'H';
+
+  while(ipc->mode != 'H') {
+    if(ipc->mode == 'F') {
+      klee_warning("irq_status     = %c",   ipc->irq_status);
+      klee_warning("requested_mode = %c",   ipc->requested_mode);
+      klee_warning("mode           = %c",   ipc->mode); 
+      klee_error("unable to halt target... irq channel busy"); 
+    }
+  }
+}
