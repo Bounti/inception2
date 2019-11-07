@@ -17,6 +17,7 @@ add_executable(inception
   target/jlink/JlinkUtil.c
   target/target.cc
   target/usb3dap/usb3dap.cc
+  target/usb3dap/usb_device.cc
   target/verilator/verilator.cc
   target/openocd/openocd.cc
   target/jlink/jlink.cc

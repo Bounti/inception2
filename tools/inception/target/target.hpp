@@ -15,15 +15,15 @@ class Target {
   std::string binary;
 
   std::string getArgs() { return args;}
-  
+
   void setArgs(std::string _args) { args = _args;}
 
   std::string getBinary() { return binary;}
-  
+
   void setBinary(std::string _binary) { binary = _binary;}
 
   std::string getName() { return name;}
-  
+
   void setName(std::string _name) { name = _name;}
 
   virtual klee::ref<Expr> read(klee::ref<Expr> address, klee::Expr::Width w) = 0;

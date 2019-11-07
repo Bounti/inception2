@@ -24,8 +24,8 @@
 *                                                                              *
 ********************************************************************************/
 
-#ifndef USB3DAP
-#define USB3DAP
+#ifndef device_hpp
+#define device_hpp
 
 #include <exception>
 #include <libusb-1.0/libusb.h>
@@ -38,51 +38,66 @@
 
 using namespace klee;
 
-#include "target.hpp"
-#include "usb_device.hpp"
-
-class usb3dap : public Target{
+class device {
 public:
-  usb3dap();
+  device(uint16_t vid, uint16_t pid, uint32_t interface, uint8_t out = 0x01,
+         uint8_t in = 0x81);
 
-  ~usb3dap();
-  
-  klee::ref<Expr> read(klee::ref<Expr> address, klee::Expr::Width w);
-
-  void write(klee::ref<Expr>  address, klee::ref<Expr> data, klee::Expr::Width w);
+  ~device();
 
   void init();
 
-  void shutdown(); 
-  
-  uint32_t save(uint32_t id=0) { return 1;};
+  void close();
 
-  void restore(uint32_t id) {};
-  
-  void remove(uint32_t id) {};
+  void set_timeout(unsigned int _timeout) { timeout = _timeout; }
 
-  bool has_pending_irq();
-  
-  int32_t get_active_irq() { return -1;};
-  
-  void irq_ack() {};
+  void send(uint8_t *data, uint32_t size);
 
-  void halt() {};
-  
-  void resume() {};
+  void receive(uint8_t *data, uint32_t size);
+
+  void accept_timeout() {
+    timeout_is_error = false;
+  }
 
 private:
+  bool timeout_is_error;
 
-  device* io;
+  void device_open();
 
-  device* io_irq;
+  void device_close();
 
-  bool initialized;
+  uint32_t io(uint8_t endpoint, uint8_t *buffer, uint32_t size);
 
-  void write(uint32_t address, uint32_t data);
+  libusb_device *dev; /* USBDevice */
 
-  uint32_t read(uint32_t address);
+  static libusb_device_handle *handle; /* Handle */
 
+  struct libusb_context *context;
+
+  struct libusb_device_descriptor descriptor;
+
+  unsigned short vid; /* Vendor ID */
+
+  unsigned short pid; /* Product ID */
+
+  unsigned char is_open; /* When device is opened, val = 1 */
+
+  unsigned char busnum; /* The bus number of this device */
+
+  unsigned char devaddr; /* The device address*/
+
+  unsigned char filler; /* Padding to make struct = 16 bytes */
+
+  uint32_t interface;
+
+  uint8_t entrypoint_download;
+
+  uint8_t entrypoint_upload;
+
+  unsigned int timeout;
+
+  static bool initialized;
 };
 
 #endif /* device_hpp */
+

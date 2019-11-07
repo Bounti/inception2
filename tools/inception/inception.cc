@@ -243,22 +243,22 @@ void Inception::add_target(std::string name, std::string type, std::string binar
   if( resolve_target(name) != NULL )
     return;
 
-  if( name.compare("usb3_dap") == 0 ) {
+  if( type.compare("usb3_dap") == 0 ) {
     target = new usb3dap();
-  } else if ( name.compare("jlink") == 0 ) {
+  } else if ( type.compare("jlink") == 0 ) {
     target = new jlink();
     target->setArgs(args);
-  } else if( name.compare("openocd") == 0 ) {
+  } else if( type.compare("openocd") == 0 ) {
     target = new openocd();
     target->setArgs(args);
-  } else if( name.compare("verilator") == 0 ) {
+  } else if( type.compare("verilator") == 0 ) {
     target = new verilator();
     target->setBinary(binary);
     target->setArgs(args);
   }
 
   if(target == NULL) {
-    klee_error("targets configuration does not support %s", type);
+    klee_error("targets configuration does not support %s", type.c_str());
   } else {
     klee_message("adding target %s", type.c_str());
     target->setName(name);
