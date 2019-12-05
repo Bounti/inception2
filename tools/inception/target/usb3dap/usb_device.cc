@@ -43,9 +43,8 @@ device::device(uint16_t p_vid, uint16_t p_pid, uint32_t p_interface,
                uint8_t out, uint8_t in) {
 
   timeout_is_error = true;
- 
- 
-  timeout = 10;
+  
+  timeout = 500;
 
   entrypoint_download = out;
   entrypoint_upload = in;

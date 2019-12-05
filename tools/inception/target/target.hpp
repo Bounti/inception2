@@ -14,6 +14,8 @@ class Target {
 
   std::string binary;
 
+  bool active;
+
   std::string getArgs() { return args;}
 
   void setArgs(std::string _args) { args = _args;}
@@ -40,9 +42,9 @@ class Target {
 
   virtual void remove(uint32_t id) = 0;
 
-  virtual bool has_pending_irq() = 0;
+  virtual bool has_pending_irq(uint32_t state_id) = 0;
 
-  virtual int32_t get_active_irq() = 0;
+  virtual int32_t get_active_irq(uint32_t state_id) = 0;
 
   virtual void irq_ack() = 0;
 
@@ -50,6 +52,11 @@ class Target {
 
   virtual void resume() = 0;
 
+  void enable() { active = true;}
+
+  void disable() { active = false;}
+
+  bool is_active() { return active;}
 };
 
 #endif

@@ -145,6 +145,11 @@ namespace klee {
     HANDLER(handleSubOverflow);
     HANDLER(handleDivRemOverflow);
     HANDLER(handleInceptionDumpRegisters);
+    HANDLER(handleTargetEnable);
+    HANDLER(handleTargetDisable);
+    HANDLER(handleTargetForwardState);
+    HANDLER(handleDisableStateHeuristic);
+    HANDLER(handleEnableStateHeuristic);
 
 #undef HANDLER
   };

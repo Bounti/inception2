@@ -43,7 +43,7 @@ void verilator::irq_ack() {
   klee_warning("done");
 }
 
-bool verilator::has_pending_irq() {
+bool verilator::has_pending_irq(uint32_t state_id) {
 
   IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
 
@@ -55,7 +55,7 @@ bool verilator::has_pending_irq() {
   return false;
 }
 
-int32_t verilator::get_active_irq() {
+int32_t verilator::get_active_irq(uint32_t state_id) {
   //TODO: avoid hardwire
   uint32_t address = 0x43c20000;
   uint32_t value = 0;

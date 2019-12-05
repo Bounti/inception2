@@ -35,6 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "klee/Expr.h"
+#include <thread>
 
 using namespace klee;
 
@@ -55,23 +56,24 @@ public:
 
   void shutdown(); 
   
-  uint32_t save(uint32_t id=0) { return 1;};
+  uint32_t save(uint32_t id=0);
 
-  void restore(uint32_t id) {};
+  void restore(uint32_t id);
   
   void remove(uint32_t id) {};
 
-  bool has_pending_irq();
+  bool has_pending_irq(uint32_t state_id);
   
-  int32_t get_active_irq() { return -1;};
+  int32_t get_active_irq(uint32_t state_id);
   
-  void irq_ack() {};
+  void irq_ack();
 
   void halt() {};
   
   void resume() {};
 
 private:
+  std::thread* irq_handler_thread;
 
   device* io;
 
@@ -82,6 +84,12 @@ private:
   void write(uint32_t address, uint32_t data);
 
   uint32_t read(uint32_t address);
+
+  uint32_t snapshot_length;
+
+  uint32_t snapshot_index;
+
+  uint32_t snp_counter;
 
 };
 

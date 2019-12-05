@@ -83,8 +83,9 @@ void Inception::load_targets_conf_from_file(const char* _targets_conf_file) {
       std::string type         = it->get("type", "").asString();
       std::string binary       = it->get("binary", "").asString();
       std::string args         = it->get("args", "").asString();
+      bool active              = it->get("active",false).asBool();
 
-      add_target(name, type, binary, args);
+      add_target(name, type, binary, args, active);
     }
 
   } else {
@@ -236,7 +237,7 @@ void Inception::start_analysis() {
   interpreter->start_analysis();
 }
 
-void Inception::add_target(std::string name, std::string type, std::string binary, std::string args) {
+void Inception::add_target(std::string name, std::string type, std::string binary, std::string args, bool active) {
 
   Target* target = NULL;
 
@@ -255,6 +256,8 @@ void Inception::add_target(std::string name, std::string type, std::string binar
     target = new verilator();
     target->setBinary(binary);
     target->setArgs(args);
+  } else if( type.compare("dummy") == 0 ) {
+    target = new dummy();
   }
 
   if(target == NULL) {
@@ -262,6 +265,8 @@ void Inception::add_target(std::string name, std::string type, std::string binar
   } else {
     klee_message("adding target %s", type.c_str());
     target->setName(name);
+    if(active)
+      target->enable();
     target->init();
     targets.push_back(target);
   }

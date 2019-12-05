@@ -60,6 +60,7 @@
 #include "target/jlink/jlink.hpp"
 #include "target/verilator/verilator.hpp"
 #include "target/usb3dap/usb3dap.hpp"
+#include "target/dummy/dummy.hpp"
 
 using namespace llvm;
 using namespace klee;
@@ -99,7 +100,7 @@ public:
 
   ~Inception() { shutdown(); };
 
-  void add_target(std::string name, std::string type, std::string binary, std::string args);
+  void add_target(std::string name, std::string type, std::string binary, std::string args, bool active);
 
   void load_configuration(char **argv) {
 

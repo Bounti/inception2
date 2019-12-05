@@ -25,8 +25,6 @@ using namespace llvm;
 
 namespace klee {
 
-extern bool irq_running;
-
 class InceptionExecutor;
 
 void irq_handler(device* io_irq, InceptionExecutor* executor);
@@ -56,13 +54,11 @@ class InceptionExecutor : public Executor{
 
   device* io_irq;
 
-  std::stack<uint32_t> pending_interrupts;
-
   std::map<ExecutionState*, Function*> interrupted_states;
   
   std::map<ExecutionState*, uint32_t> sw_to_hw;
 
-  void serve_pending_interrupt(ExecutionState* state);
+  void serve_pending_interrupt(ExecutionState* state, uint32_t active_irq);
 
   ref<Expr> readAt(ExecutionState &state, ref<Expr> address) const;
 
@@ -87,18 +83,31 @@ class InceptionExecutor : public Executor{
     return NULL;
   }
  
-  void sanitize_hw_state(ExecutionState* current_state);
+  void sanitize_hw_state(ExecutionState* current_state, ExecutionState* new_state);
 
-  void update_hw_state(ExecutionState* state);
+  bool update_hw_state(ExecutionState* state);
 
   Target* get_active_target() {
   
     std::vector<Target*>::iterator it;
     for (it = targets.begin() ; it != targets.end(); ++it) {
       Target* target = *it;
-    
-      return target;
+      if(target->is_active())
+        return target;
     } 
+    klee_error("not active target");
+  }
+
+  uint32_t get_state_id(ExecutionState* state) {
+    if(state == NULL)
+      return 0;
+
+    std::map<ExecutionState*, uint32_t>::iterator it;
+  
+    it = sw_to_hw.find(state);
+    if(it != sw_to_hw.end())
+      return it->second;
+    return 0;
   }
 
   public:
@@ -106,13 +115,8 @@ class InceptionExecutor : public Executor{
     targets.push_back(target);
   }
 
-  void add_target(std::string name, std::string type, std::string binary, std::string args);
-
   void shutdown() {
-
-    //irq_running = false;
-    //while(irq_running == false);
-     
+ 
     std::vector<Target*>::iterator it;     
     for (it = targets.begin() ; it != targets.end(); ++it) {
       Target* target = *it;
@@ -124,17 +128,9 @@ class InceptionExecutor : public Executor{
     min_irq_threshold = _min_irq_threshold; 
   }
 
-  void push_irq(uint32_t id) {
-    pending_interrupts.push(id);
-  }
 
   void add_irq_to_model(uint32_t irq_id, uint32_t frequency) {
     irq_model.insert(std::pair<uint32_t, uint32_t>(irq_id, frequency));
-  }
-
-  void add_target(Target* io_device, device* irq_device){
-    io     = io_device;
-    io_irq = irq_device;
   }
 
   void set_elf(std::unique_ptr<object::ObjectFile>& _elf) {
@@ -165,7 +161,7 @@ class InceptionExecutor : public Executor{
     io = NULL;
     io_irq = NULL;
     min_irq_threshold = 0;
-    irq_running = false;
+    is_state_heuristic_enabled = true;
   };
 
 	void executeMemoryOperation(ExecutionState &state,

@@ -118,6 +118,8 @@ public:
     Unhandled
   };
 
+bool is_state_heuristic_enabled;
+
 protected:
   static const char *TerminateReasonNames[];
 

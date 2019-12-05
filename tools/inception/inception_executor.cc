@@ -56,138 +56,50 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
-bool irq_running;
-
-void irq_handler(device* io_irq, InceptionExecutor* executor) {
-
-  while(irq_running) {
-
-    //uint8_t buffer[8] = {0};
-    //uint32_t value=0;
-    //uint32_t error_code;
-
-    //io_irq->receive(buffer, 8);
-    std::vector<Target*>::iterator it;
-
-    for (it = executor->targets.begin() ; it != executor->targets.end(); ++it) {
-      Target* target = *it;
-      if( target->has_pending_irq() ) {
-        uint32_t irq_id = target->get_active_irq();
-
-        if( irq_id != -1 ) {
-          executor->push_irq(irq_id);
-        }
-      }
-    }
-
-    //error_code |= buffer[0] << 24;
-    //error_code |= buffer[1] << 16;
-    //error_code |= buffer[2] << 8;
-    //error_code |= buffer[3];
-
-    //value |= buffer[4] << 24;
-    //value |= buffer[5] << 16;
-    //value |= buffer[6] << 8;
-    //value |= buffer[7];
-
-    //printf("[Trace] Interrupt error_code : %08x\n", error_code);
-
-    //if(value != 0) {
-    //  executor->push_irq(value);
-    //  printf("[Trace] Interrupt ID : %08x\n", value);
-    //}
-  }
-  irq_running = true;
-}
-
-object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
-  uint64_t addr, size;
-  StringRef name;
-  std::error_code ec;
-
-  for (object::symbol_iterator I = elf->symbols().begin(),
-                               E = elf->symbols().end();
-       I != E; ++I) {
-
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-
-    if( name.equals(expected_name) ) {
-      *success = true;
-      return *I;
-    }
-
-    //addCustomObject(name, addr, size, false, false, false, false);
-  }
-  *success = false;
-  return object::SymbolRef();
-}
-
-object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string expected_name, bool *success) {
-  StringRef name;
-  std::error_code ec;
-
-  for (object::section_iterator I = elf->sections().begin(),
-                                E = elf->sections().end();
-       I != E; ++I) {
-
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-      continue;
-    }
-
-    if( name.equals(expected_name) ) {
-      *success = true;
-      return *I;
-    }
-
-    //addCustomObject(name, addr, size, false, false, false, false);
-  }
-  *success = false;
-  return object::SectionRef();
-}
-
-
-MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
-                                           bool isReadOnly, bool isSymbolic,
-                                           bool isRandomized, bool isForwarded, std::string target_name, const llvm::Value* allocSite) {
-
-  klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
-
-  auto mo = memory->allocateFixed(addr, size, allocSite);
-
-  mo->setName(name);
-  mo->isUserSpecified = true;
-  //mo->isSymbolic = isSymbolic;
-  //mo->isRandomized = isRandomized;
-  //mo->isForwarded = isForwarded;
-
-  ObjectState *os = bindObjectInState(*init_state, mo, false);
-  if(isReadOnly)
-    os->setReadOnly(true);
-
-  if( isRandomized )
-    os->initializeToRandom();
-  else if( isSymbolic )
-    executeMakeSymbolic(*init_state, mo, name);
-  else if( isForwarded ) {
-
-    os->initializeToZero();
-
-    Target* target = resolve_target(target_name);
-    if( target == NULL ) {
-      klee_error("Configuration missmatch: unknown target %s ", target_name.c_str());
-    }
-
-    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, target));
-  }
-  else
-    os->initializeToZero();
-
-  return mo;
-}
+//%void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
+//%
+//%  Target* target = NULL;
+//%
+//%  if( resolve_target(name) != NULL )
+//%    return;
+//%
+//%  if( name.compare("usb3_dap") == 0 ) {
+//%    target = new usb3dap();
+//%  } else if ( name.compare("jlink") == 0 ) {
+//%    target = new jlink();
+//%    target->setArgs(args);
+//%  } else if( name.compare("openocd") == 0 ) {
+//%    target = new openocd();
+//%    target->setArgs(args);
+//%  } else if( name.compare("verilator") == 0 ) {
+//%    target = new verilator();
+//%    target->setBinary(binary);
+//%    target->setArgs(args);
+//%  }
+//%
+//%  if(target == NULL) {
+//%    os->setReadOnly(true);
+//%
+//%  if( isRandomized )
+//%    os->initializeToRandom();
+//%  else if( isSymbolic )
+//%    executeMakeSymbolic(*init_state, mo, name);
+//%  else if( isForwarded ) {
+//%
+//%    os->initializeToZero();
+//%
+//%    Target* target = resolve_target(target_name);
+//%    if( target == NULL ) {
+//%      klee_error("Configuration missmatch: unknown target %s ", target_name.c_str());
+//%    }
+//%
+//%    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, target));
+//%  }
+//%  else
+//%    os->initializeToZero();
+//%
+//%  return mo;
+//%}
 
 /*
  * Overwrite load, store, call and ret
@@ -337,11 +249,8 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
       interrupted_states.erase(it);
       interrupted = true;
 
-      std::vector<Target*>::iterator it;
-      for (it = targets.begin() ; it != targets.end(); ++it) {
-        Target* target = *it;
-        target->irq_ack();
-      } 
+      Target* target = get_active_target();
+      target->irq_ack();
     }
 
 
@@ -418,8 +327,8 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
       Executor::StatePair branches = fork(state, cond, false);
 
       //XXX: create hardware snapshot for the new states
-      update_hw_state(branches.first);
-      update_hw_state(branches.second);
+      if( !(branches.first == 0 || branches.second == 0) )
+        klee_message("forking execution state %p and %p", branches.first, branches.second);
 
       // NOTE: There is a hidden dependency here, markBranchVisited
       // requires that we still be in the context of the branch
@@ -427,11 +336,21 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
       // up with convenient instruction specific data.
       if (statsTracker && state.stack.back().kf->trackCoverage)
         statsTracker->markBranchVisited(branches.first, branches.second);
+      
+      // we need to restore the current hw state
+      Target* target = get_active_target();
 
-      if (branches.first)
-        transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), *branches.first);
-      if (branches.second)
-        transferToBasicBlock(bi->getSuccessor(1), bi->getParent(), *branches.second);
+      if (branches.first) {
+        if( update_hw_state(branches.first) )
+          target->restore(get_state_id(&state));
+        transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), *branches.first); 
+      }
+      if (branches.second) {
+        if( update_hw_state(branches.second) )
+          target->restore(get_state_id(&state));
+        transferToBasicBlock(bi->getSuccessor(1), bi->getParent(), *branches.second); 
+      }
+
     }
     break;
   }  
@@ -441,46 +360,31 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
   }
 }
 
-void InceptionExecutor::update_hw_state(ExecutionState* state) {
+bool InceptionExecutor::update_hw_state(ExecutionState* state) {
 
   uint64_t hw_id = 0;
+  
+  Target* target = get_active_target();
 
   std::map<ExecutionState*, uint32_t>::iterator it;
  
   if(state == NULL)
-    return;
+    return false;
 
   it = sw_to_hw.find(state);
-  if(it != sw_to_hw.end())
-   hw_id = it->second;
- 
-  if ( hw_id == 0) {
-    //klee_message("    creating hw state for %d with id %d", state, hw_id);
+  if(it == sw_to_hw.end()) {
+    klee_message("    creating new hw state for sw state %p", state);
     // First time we create a snapshot for this state
-    std::vector<Target*>::iterator it_tg;
-    for (it_tg = targets.begin() ; it_tg != targets.end(); ++it_tg) {
-      Target* target = *it_tg;
-      hw_id = target->save();
-      break;
-    }
-    sw_to_hw.insert(std::pair<ExecutionState*, uint32_t>(state, hw_id));
-  } else {
-    
-    return;
-    /*
-     * For now, we support only one active target at a time.
-     * Does it make sens to support more than one ?
-     * TODO: set active flag on target
-     */
-    std::vector<Target*>::iterator it_tg;
-    for (it_tg = targets.begin() ; it_tg != targets.end(); ++it_tg) {
-      Target* target = *it_tg;
-      hw_id = target->save(hw_id);
-      break;
-    }
-    it->second = hw_id;  
-    //klee_message("    updating hw state for %d with id %d", state, hw_id);
+    hw_id = target->save();
+    sw_to_hw.insert(std::pair<ExecutionState*, uint32_t>(state, hw_id)); 
+    return true;
+  } else if( it->second == 0) {
+    klee_message("    updating existing hw state for sw state %p", state);
+    hw_id = target->save();
+    it->second = hw_id;
+    return true;
   }
+  return false;
 }
 
 void InceptionExecutor::initializeGlobals(ExecutionState &state) {
@@ -497,6 +401,8 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
     ref<ConstantExpr> addr(0);
 
     uint64_t device_address, device_size;
+    
+    klee_warning("%s", f->getName().str().c_str());
 
     // If the symbol has external weak linkage then it is implicitly
     // not defined in this module; if it isn't resolvable then it
@@ -504,6 +410,7 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
     if (f->hasExternalWeakLinkage() &&
         !externalDispatcher->resolveSymbol(f->getName())) {
       addr = Expr::createPointer(0);
+      klee_warning("%s is an external function", f->getName().str().c_str());
     } else {
       //addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
       //legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
@@ -858,11 +765,7 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
   //Executor::executeMemoryOperation(state, isWrite, address, value, target);
 }
 
-void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
-  // Return immediately if we do not have to serve interrupts (if any of the
-  // following conditions is true. The order is chose for efficiency
-  if (pending_interrupts.empty()) // no interrupt is pending
-    return;
+void InceptionExecutor::serve_pending_interrupt(ExecutionState* current, uint32_t active_irq) {
 
   Function* caller = current->pc->inst->getParent()->getParent();
 
@@ -873,10 +776,6 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
     return;
 
   interrupted_states.insert(std::pair<ExecutionState*, Function*>(current, caller));
-
-  // get the pending interrupt
-  uint32_t current_interrupt = pending_interrupts.top();
-  pending_interrupts.pop();
 
   klee_message("[InterruptController] Suspending %s to execute "
                "inception_interrupt_handler",
@@ -890,13 +789,16 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
   // NOTE for the reason
   current->pushFrame(current->pc, kf);
 
+  if (statsTracker)
+    statsTracker->framePushed(state, &state.stack[state.stack.size()-2]);
+
   // the generic handler takes as parameter the address of the interrupt
   // vector location in which to look for the handler address
  {
     // the generic handler takes as parameter the address of the interrupt
     // vector location in which to look for the handler address
     //TODO: avoid hardwire
-    uint32_t vector_address = 0x100000 + (current_interrupt << 2);
+    uint32_t vector_address = 0x100000 + (active_irq << 2);
 
     klee::ref<klee::Expr> Vector_address =
         klee::ConstantExpr::create(vector_address, Expr::Int32);
@@ -948,72 +850,47 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current) {
  * Each time the state heuristic select a different execution path, this save
  * and restore hw state.
  */
-void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state) {
+void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state, ExecutionState* new_state) {
 
-  static ExecutionState *previous_state = NULL;
+  Target* target = get_active_target();
 
   uint64_t current_hw_id = 0;
-  uint64_t last_hw_id    = 0;
+  uint64_t new_hw_id    = 0;
 
   std::map<ExecutionState*, uint32_t>::iterator it_old;
   std::map<ExecutionState*, uint32_t>::iterator it_new;
   
-  it_new = sw_to_hw.find(current_state);
-  if(it_new != sw_to_hw.end())
-    current_hw_id = it_new->second;
- 
-  it_old = sw_to_hw.find(previous_state);
+  it_old = sw_to_hw.find(current_state);
   if(it_old != sw_to_hw.end())
-    last_hw_id = it_old->second; 
-  
-  if (previous_state == NULL) {
-    previous_state = current_state;
-  } else {
-    // We are moving to a different path
-    if (previous_state != current_state) {
-      klee_message("Switching sw state from %d [%d] to %d [%d]", previous_state, last_hw_id, current_state, current_hw_id);
+    current_hw_id = it_old->second;
+ 
+  it_new = sw_to_hw.find(new_state);
+  if(it_new != sw_to_hw.end())
+    new_hw_id = it_new->second; 
 
-      // do we have a hw snapshot associated to the old path ? 
-      if ( last_hw_id != 0) {
-        //klee_message("    previous state has already a hw snp on storage, updating...");
+  if(current_state == NULL)
+    current_state = new_state;
 
-        /*
-         * For now, we support only one active target at a time.
-         * Does it make sens to support more than one ?
-         * TODO: set active flag on target
-         */
-        std::vector<Target*>::iterator it;
-        for (it = targets.begin() ; it != targets.end(); ++it) {
-          Target* target = *it;
-          last_hw_id = target->save(last_hw_id);
-          break;
-        }
-        it_old->second = last_hw_id; 
-        // update id in global database
-      } else {
-        //klee_message("    previous state has no hw snp on storage...");
+  // We are moving to a different path
+  if (new_state != current_state) {
+    klee_message("Switching sw state from %p [%d] to %p [%d]", current_state, current_hw_id, new_state, new_hw_id);
 
-        std::vector<Target*>::iterator it;
-        for (it = targets.begin() ; it != targets.end(); ++it) {
-          Target* target = *it;
-          last_hw_id = target->save();
-          break;
-        }
-        sw_to_hw.insert(std::pair<ExecutionState*, uint64_t>(previous_state, last_hw_id));
-      }
+    // do we have a hw snapshot associated to the old path ? 
+    if ( current_hw_id != 0) {
+      //klee_message("    previous state has already a hw snp on storage, updating...");
+      current_hw_id = target->save(current_hw_id);
+      it_old->second = current_hw_id; 
+    } else {
+      //klee_message("    previous state has no hw snp on storage...");
+      current_hw_id = target->save();
+      sw_to_hw.insert(std::pair<ExecutionState*, uint64_t>(current_state, current_hw_id));
+    }
 
-      if(current_hw_id != 0) {
-        //klee_message("    restoring hw snp for state %d with id %d", current_state, current_hw_id);
-        std::vector<Target*>::iterator it;
-        for (it = targets.begin() ; it != targets.end(); ++it) {
-          Target* target = *it;
-          target->restore(current_hw_id);
-          break;
-        }
-      } else {
-        klee_error("    no hw snp on storage for %d, using running design", current_state);
-      }
-      previous_state = current_state;
+    if(new_hw_id != 0) {
+      //klee_message("    restoring hw snp for state %p with id %p", new_state, new_hw_id);
+      target->restore(new_hw_id);
+    } else {
+      //klee_error("    no hw snp on storage for %p, using running design", new_state);
     }
   }
 }
@@ -1023,10 +900,6 @@ void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state) {
  * Futermore, it enables overriding subsequent methods such as executeMemoryOperation
 */
 void InceptionExecutor::run(ExecutionState &initialState) {
-
-  //irq_running = true;
-  //irq_handler_thread = new std::thread(irq_handler, io_irq, this);
-  //irq_handler_thread->detach();
 
   bindModuleConstants();
 
@@ -1044,38 +917,34 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   ExecutionState* state = NULL;
 
   Target* target = get_active_target();
+  instructions_counter = 0;
   
   while (!states.empty() && !haltExecution) {
     uint32_t irq_id = 0;
 
-    //target->halt();
-    //target->resume();
+    bool active_interrupt = false;
 
-    if( target->has_pending_irq() ) {
-      irq_id = target->get_active_irq();
+    //if( instructions_counter > 100 && target->has_pending_irq() ) {
+    if((interrupted_states.count(state) == 0) && target->has_pending_irq(get_state_id(state)) ) {
+      irq_id = target->get_active_irq(get_state_id(state));
+      active_interrupt = true;
 
       if( irq_id != 0 ) {
-        klee_warning("pending irq %d", irq_id);
-        push_irq(irq_id);
+        klee_warning("pending irq 0x%08x", irq_id);
+        serve_pending_interrupt(state, irq_id);
       }
     }
 
-    /*
-     * Our target raises interrupt signal asynchronously. For all supported
-     * targets there is an irq channel that is not part of the snapshot and
-     * therefore is not synchronized. To avoid inconsistencies, we need to fill
-     * pending interrupt before any state switching. 
-     */
-    if ( state == NULL || (pending_interrupts.empty() && interrupted_states.count(state) == 0)  ) {
-      state = &(searcher->selectState());
+    if ( is_state_heuristic_enabled && ((state == NULL) || (active_interrupt == false)) ) {
+      ExecutionState* new_state = &(searcher->selectState());
+      if(state != new_state)
+        klee_warning("current state is %p with id %d", new_state, get_state_id(new_state));
 
-      sanitize_hw_state(state);
+      sanitize_hw_state(state, new_state);
+      state = new_state;
+      
     }
  
-    if( state != NULL && interrupted_states.count(state) == 0 ) {
-      serve_pending_interrupt(state);
-    }
-
     KInstruction *ki = state->pc;
     stepInstruction(*state);
 
@@ -1085,7 +954,7 @@ void InceptionExecutor::run(ExecutionState &initialState) {
     checkMemoryUsage();
 
     updateStates(state);
-   // instructions_counter++;
+    instructions_counter++;
   }
 
   //while (!states.empty() && !haltExecution) {
@@ -1223,6 +1092,69 @@ void InceptionExecutor::initFunctionAsMain(Function *f,
 }
 
 void InceptionExecutor::start_analysis() {
+  processTree = new PTree(init_state);
+  init_state->ptreeNode = processTree->root;
+  run(*init_state);
+ 
+  delete processTree;
+  processTree = 0;
+
+  // hack to clear memory objects
+  delete memory;
+  memory = new MemoryManager(NULL);
+
+  globalObjects.clear();
+  globalAddresses.clear();
+
+  if (statsTracker)
+    statsTracker->done();
+}
+
+
+}
+#include "inception_executor.hpp"
+
+#include "klee/ExecutionState.h"
+#include "klee/Expr.h"
+#include "../lib/Core/Executor.h"
+
+#include "../lib/Core/Context.h"
+#include "../lib/Core/CoreStats.h"
+#include "../lib/Core/ExecutorTimerInfo.h"
+#include "../lib/Core/ExternalDispatcher.h"
+#include "../lib/Core/ImpliedValue.h"
+#include "../lib/Core/Memory.h"
+#include "../lib/Core/MemoryManager.h"
+#include "../lib/Core/PTree.h"
+#include "../lib/Core/Searcher.h"
+#include "../lib/Core/SeedInfo.h"
+#include "../lib/Core/SpecialFunctionHandler.h"
+#include "../lib/Core/StatsTracker.h"
+#include "../lib/Core/TimingSolver.h"
+#include "../lib/Core/UserSearcher.h"
+
+#include "klee/Common.h"
+#include "klee/Config/Version.h"
+#include "klee/ExecutionState.h"
+#include "klee/Expr.h"
+#include "klee/Internal/ADT/KTest.h"
+#include "klee/Internal/ADT/RNG.h"
+#include "klee/Internal/Module/Cell.h"
+#include "klee/Internal/Module/InstructionInfoTable.h"
+#include "klee/Internal/Module/KInstruction.h"
+#include "klee/Internal/Module/KModule.h"
+#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Internal/Support/FileHandling.h"
+#include "klee/Internal/Support/FloatEvaluation.h"
+#include "klee/Internal/Support/ModuleUtil.h"
+#include "klee/Internal/System/MemoryUsage.h"
+#include "klee/Internal/System/Time.h"
+#include "klee/Interpreter.h"
+#include "klee/OptionCategories.h"
+#include "klee/SolverCmdLine.h"
+#include "klee/SolverStats.h"
+#include "klee/TimerStatIncrementer.h"
+#include "klee/util/Assignment.h"
   processTree = new PTree(init_state);
   init_state->ptreeNode = processTree->root;
   run(*init_state);

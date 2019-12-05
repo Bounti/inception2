@@ -153,9 +153,9 @@ class openocd : public Target {
 
   void restore(uint32_t id) {};
   
-  bool has_pending_irq() { return false;};
+  bool has_pending_irq(uint32_t state_id) { return false;};
 
-  int32_t get_active_irq() { return -1;};
+  int32_t get_active_irq(uint32_t state_id) { return -1;};
 
   void irq_ack() {};
 

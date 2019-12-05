@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <thread>
 #include <unistd.h>
 #include <string.h>
 #include "JlinkUtil.h"
@@ -18,6 +19,39 @@ static int verbose;
 
 using namespace klee;
 
+static bool irq_running;
+
+static int current_irq;
+
+static bool wait_ack;
+
+static bool lock_snp;
+
+void irq_handler(jlink* io) {
+
+  bool pulse = true;
+
+  current_irq = 0;
+  wait_ack = false;
+  lock_snp = false;
+
+  while(irq_running) {
+
+    if(lock_snp)
+      continue;
+
+    uint32_t value = (io->read(0x43c20000) & 0x7);
+
+    if( (value != 0) && (wait_ack == false) && (pulse==true)) {
+      current_irq = value;
+
+      pulse = false;
+    } else if( (value == 0) && (pulse==false) ) {
+      pulse = true; 
+    }
+  }
+  irq_running = true;
+}
 
 klee::ref<Expr> jlink::read(klee::ref<Expr> address, klee::Expr::Width w) {
 
@@ -169,15 +203,16 @@ void jlink::write(klee::ref<Expr> address, klee::ref<Expr> data, klee::Expr::Wid
 
 void jlink::init() {
 
-  JlinkConnect(0, 0);
+  if( !JlinkConnect(0, 0) )
+    klee_error("unable to connect to jlink device");
 
   JLINK_SelectUSB(0);
 
   JLINK_Open();
 
-  //JLINKARM_SelectDeviceFamily("Zynq_7020");
-  //JLINK_ExecCommand("device=Zynq 7020", NULL, 0);
-  JLINK_ExecCommand("device=LPC1850", NULL, 0);
+  JLINKARM_SelectDeviceFamily("Zynq_7020");
+  JLINK_ExecCommand("device=Zynq 7020", NULL, 0);
+  //JLINK_ExecCommand("device=LPC1850", NULL, 0);
 
   JLINK_TIF_Select(JLINKARM_TIF_JTAG);
 
@@ -191,6 +226,16 @@ void jlink::init() {
   JLINK_Reset();
   
   JLINKARM_Halt();
+
+  irq_running = true;
+  irq_handler_thread = new std::thread(irq_handler, this);
+  irq_handler_thread->detach();
+
+  snapshot_length = 10752;
+
+  snapshot_index = 0x10000000;
+
+  snp_counter = 0;
 }
 
 void jlink::shutdown() {
@@ -211,3 +256,77 @@ void jlink::write(uint32_t address, uint32_t data) {
   JLINKARM_WriteMem(address, 4, (void*)&data);
 }
 
+int32_t jlink::get_active_irq(uint32_t state_id) { 
+ 
+  return current_irq;
+};
+
+bool jlink::has_pending_irq(uint32_t state_id) {
+  
+  if( (current_irq != 0) && (wait_ack == false)) { 
+    klee_message("IRQ    !!!!   %d", current_irq);
+    wait_ack = true;
+    return true;
+  }
+  return false;
+}
+
+void jlink::irq_ack(){
+    write(0x43c20000, 0x4);
+
+    current_irq = 0;
+    wait_ack = false;
+
+}
+
+uint32_t jlink::save(uint32_t id) {   
+
+  lock_snp = true;
+
+  if(id == 0)
+    id = ++snp_counter;
+
+  uint32_t from = snapshot_index+(snapshot_length*10);
+  uint32_t to   = snapshot_index+(snapshot_length*id);
+
+  klee_message("saving snapshot %d - saving snapshot at %08x and loading one at %08x", id, to, from);
+
+  // from
+  write(0x43c00000, from);
+  // to
+  write(0x43c00004, to);
+  // size
+  write(0x43c00008, snapshot_length);
+  // start stop
+  write(0x43c0000C, 1);
+  write(0x43c0000C, 0);
+
+  while(read(0x43c00010) == 0);
+
+  restore(id);
+
+  return id;
+}
+
+void jlink::restore(uint32_t id) {
+  lock_snp = true;
+  
+  uint32_t from = snapshot_index+(snapshot_length*id);
+  uint32_t to   = snapshot_index+(snapshot_length*10);
+  
+  klee_message("restoring snapshot %d - saving snapshot at %08x and loading one at %08x", id, to, from);
+
+  // from
+  write(0x43c00000, from);
+  // to
+  write(0x43c00004, to);
+  // size
+  write(0x43c00008, snapshot_length);
+  // start stop
+  write(0x43c0000C, 1);
+  write(0x43c0000C, 0);
+
+  while(read(0x43c00010) == 0);
+  lock_snp = false;
+
+}

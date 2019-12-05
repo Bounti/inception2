@@ -112,6 +112,11 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("malloc", handleMalloc, true),
   add("memalign", handleMemalign, true),
   add("realloc", handleRealloc, true),
+  add("inception_enable_target", handleTargetEnable, true),
+  add("inception_disable_target", handleTargetDisable, true),
+  add("inception_forward_state", handleTargetForwardState, true),
+  add("inception_disable_state_heuristic", handleDisableStateHeuristic, true),
+  add("inception_enable_state_heuristic", handleEnableStateHeuristic, true),
 
   // operator delete[](void*)
   add("_ZdaPv", handleDeleteArray, false),
@@ -914,3 +919,57 @@ void SpecialFunctionHandler::handleInceptionDumpRegisters(ExecutionState &state,
                                                std::vector<ref<Expr> > &arguments) {
   return;
 }
+
+void SpecialFunctionHandler::handleTargetForwardState(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  assert(arguments.size()==2 &&
+         "invalid number of arguments to inception_forward_state");
+  
+  std::string from;
+  from = readStringAtAddress(state, arguments[0]);
+
+  std::string to;
+  to = readStringAtAddress(state, arguments[1]);
+}
+
+void SpecialFunctionHandler::handleTargetEnable(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  assert(arguments.size()==1 &&
+         "invalid number of arguments to inception_target_enable");
+  
+  std::string name;
+  name = readStringAtAddress(state, arguments[0]);
+
+  klee_message("enable target %s", name.c_str());
+}
+
+void SpecialFunctionHandler::handleTargetDisable(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  assert(arguments.size()==1 &&
+         "invalid number of arguments to inception_target_disable");
+  
+  std::string name;
+  name = readStringAtAddress(state, arguments[0]);
+
+  klee_message("disable target %s", name.c_str());
+}
+
+void SpecialFunctionHandler::handleDisableStateHeuristic(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  klee_message("disabling state selection heuristic");
+
+  executor.is_state_heuristic_enabled = false;
+}
+
+void SpecialFunctionHandler::handleEnableStateHeuristic(ExecutionState &state,
+                                               KInstruction *target,
+                                               std::vector<ref<Expr> > &arguments) {
+  klee_message("enabling state selection heuristic");
+
+  executor.is_state_heuristic_enabled = true;
+}
+

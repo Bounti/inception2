@@ -121,9 +121,9 @@ public:
     
     void restore(uint32_t id);
 
-    bool has_pending_irq();
+    bool has_pending_irq(uint32_t state_id);
 
-    int32_t get_active_irq();
+    int32_t get_active_irq(uint32_t state_id);
 
     void irq_ack();
 

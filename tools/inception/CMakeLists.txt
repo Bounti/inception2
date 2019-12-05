@@ -21,6 +21,7 @@ add_executable(inception
   target/verilator/verilator.cc
   target/openocd/openocd.cc
   target/jlink/jlink.cc
+  target/dummy/dummy.cc
   snapshotting/criu.cc
 )
 
