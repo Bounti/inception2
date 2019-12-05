@@ -56,50 +56,94 @@ namespace klee {
 
 extern void *__dso_handle __attribute__ ((__weak__));
 
-//%void InceptionExecutor::add_target(std::string name, std::string type, std::string binary, std::string args) {
-//%
-//%  Target* target = NULL;
-//%
-//%  if( resolve_target(name) != NULL )
-//%    return;
-//%
-//%  if( name.compare("usb3_dap") == 0 ) {
-//%    target = new usb3dap();
-//%  } else if ( name.compare("jlink") == 0 ) {
-//%    target = new jlink();
-//%    target->setArgs(args);
-//%  } else if( name.compare("openocd") == 0 ) {
-//%    target = new openocd();
-//%    target->setArgs(args);
-//%  } else if( name.compare("verilator") == 0 ) {
-//%    target = new verilator();
-//%    target->setBinary(binary);
-//%    target->setArgs(args);
-//%  }
-//%
-//%  if(target == NULL) {
-//%    os->setReadOnly(true);
-//%
-//%  if( isRandomized )
-//%    os->initializeToRandom();
-//%  else if( isSymbolic )
-//%    executeMakeSymbolic(*init_state, mo, name);
-//%  else if( isForwarded ) {
-//%
-//%    os->initializeToZero();
-//%
-//%    Target* target = resolve_target(target_name);
-//%    if( target == NULL ) {
-//%      klee_error("Configuration missmatch: unknown target %s ", target_name.c_str());
-//%    }
-//%
-//%    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, target));
-//%  }
-//%  else
-//%    os->initializeToZero();
-//%
-//%  return mo;
-//%}
+object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
+  uint64_t addr, size;
+  StringRef name;
+  std::error_code ec;
+
+  for (object::symbol_iterator I = elf->symbols().begin(),
+                               E = elf->symbols().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if( name.equals(expected_name) ) {
+      *success = true;
+      return *I;
+    }
+
+    //addCustomObject(name, addr, size, false, false, false, false);
+  }
+  *success = false;
+  return object::SymbolRef();
+}
+
+object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string expected_name, bool *success) {
+  StringRef name;
+  std::error_code ec;
+
+  for (object::section_iterator I = elf->sections().begin(),
+                                E = elf->sections().end();
+       I != E; ++I) {
+
+    if ((ec = I->getName(name))) {
+      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+      continue;
+    }
+
+    if( name.equals(expected_name) ) {
+      *success = true;
+      return *I;
+    }
+
+    //addCustomObject(name, addr, size, false, false, false, false);
+  }
+  *success = false;
+  return object::SectionRef();
+}
+
+
+MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t addr, unsigned size,
+                                           bool isReadOnly, bool isSymbolic,
+                                           bool isRandomized, bool isForwarded, std::string target_name, const llvm::Value* allocSite) {
+
+  klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
+
+  auto mo = memory->allocateFixed(addr, size, allocSite);
+
+  mo->setName(name);
+  mo->isUserSpecified = true;
+  //mo->isSymbolic = isSymbolic;
+  //mo->isRandomized = isRandomized;
+  //mo->isForwarded = isForwarded;
+
+  ObjectState *os = bindObjectInState(*init_state, mo, false);
+  if(isReadOnly)
+    os->setReadOnly(true);
+
+  if( isRandomized )
+    os->initializeToRandom();
+  else if( isSymbolic )
+    executeMakeSymbolic(*init_state, mo, name);
+  else if( isForwarded ) {
+
+    os->initializeToZero();
+
+    Target* target = resolve_target(target_name);
+    if( target == NULL ) {
+      klee_error("Configuration missmatch: unknown target %s ", target_name.c_str());
+    }
+
+    forwarded_mem.insert(std::pair<uint64_t, Target*>(addr, target));
+  }
+  else
+    os->initializeToZero();
+
+  return mo;
+}
 
 /*
  * Overwrite load, store, call and ret
@@ -790,7 +834,7 @@ void InceptionExecutor::serve_pending_interrupt(ExecutionState* current, uint32_
   current->pushFrame(current->pc, kf);
 
   if (statsTracker)
-    statsTracker->framePushed(state, &state.stack[state.stack.size()-2]);
+    statsTracker->framePushed(*current, &current->stack[current->stack.size()-2]);
 
   // the generic handler takes as parameter the address of the interrupt
   // vector location in which to look for the handler address
@@ -1110,68 +1154,6 @@ void InceptionExecutor::start_analysis() {
     statsTracker->done();
 }
 
-
-}
-#include "inception_executor.hpp"
-
-#include "klee/ExecutionState.h"
-#include "klee/Expr.h"
-#include "../lib/Core/Executor.h"
-
-#include "../lib/Core/Context.h"
-#include "../lib/Core/CoreStats.h"
-#include "../lib/Core/ExecutorTimerInfo.h"
-#include "../lib/Core/ExternalDispatcher.h"
-#include "../lib/Core/ImpliedValue.h"
-#include "../lib/Core/Memory.h"
-#include "../lib/Core/MemoryManager.h"
-#include "../lib/Core/PTree.h"
-#include "../lib/Core/Searcher.h"
-#include "../lib/Core/SeedInfo.h"
-#include "../lib/Core/SpecialFunctionHandler.h"
-#include "../lib/Core/StatsTracker.h"
-#include "../lib/Core/TimingSolver.h"
-#include "../lib/Core/UserSearcher.h"
-
-#include "klee/Common.h"
-#include "klee/Config/Version.h"
-#include "klee/ExecutionState.h"
-#include "klee/Expr.h"
-#include "klee/Internal/ADT/KTest.h"
-#include "klee/Internal/ADT/RNG.h"
-#include "klee/Internal/Module/Cell.h"
-#include "klee/Internal/Module/InstructionInfoTable.h"
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
-#include "klee/Internal/Support/FloatEvaluation.h"
-#include "klee/Internal/Support/ModuleUtil.h"
-#include "klee/Internal/System/MemoryUsage.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Interpreter.h"
-#include "klee/OptionCategories.h"
-#include "klee/SolverCmdLine.h"
-#include "klee/SolverStats.h"
-#include "klee/TimerStatIncrementer.h"
-#include "klee/util/Assignment.h"
-  processTree = new PTree(init_state);
-  init_state->ptreeNode = processTree->root;
-  run(*init_state);
- 
-  delete processTree;
-  processTree = 0;
-
-  // hack to clear memory objects
-  delete memory;
-  memory = new MemoryManager(NULL);
-
-  globalObjects.clear();
-  globalAddresses.clear();
-
-  if (statsTracker)
-    statsTracker->done();
 }
 
 
-}
