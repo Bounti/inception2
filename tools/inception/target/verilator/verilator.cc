@@ -76,14 +76,14 @@ int32_t verilator::get_active_irq(uint32_t state_id) {
   }
   io_mutex.unlock();
 
-  klee_warning("verilator::read(%08x, %08x)", address, value);
+  //klee_warning("verilator::read(%08x, %08x)", address, value);
 
   return (int32_t)(value & 0x7);
 }
 
 void verilator::write(uint32_t address, uint32_t data) {
   klee_warning("verilator::write(%08x, %08x)", address, data);
-  
+
   io_mutex.lock();
   {
     IPC_MESSAGE* ipc = (IPC_MESSAGE*) ipc_ptr;
@@ -141,7 +141,6 @@ void verilator::init() {
       perror("fork failed");
       _exit(3);
   }
-
   unique_id = 1;
 
   /*
@@ -366,11 +365,18 @@ uint32_t verilator::save(uint32_t id) {
    * The checkpoint is stored on a persistent storage in /tmp by default.
    * Each output directory contains a unique identifier to distinguish images.
    */
-  if( id == 0 )
-    id = unique_id++;
-  else
-    remove(id);
- 
+  if(id == 0) {
+    id = ++unique_id;
+
+    // set a watermark on hardware so that we can identify precisely from where the interrupt are coming
+    write(0x43c20014, id);
+
+    printf("watermark on device with id %08x\n", read(0x43c20014));
+  }
+  //else
+  //  remove(id);
+  return id;
+
   int fd;
   std::string image_dir = directory + std::to_string(id);
   std::string log_file = std::string("dump.log");
@@ -430,6 +436,7 @@ uint32_t verilator::save(uint32_t id) {
 }
 
 void verilator::restore(uint32_t id) {
+  return;
   int fd, ret;
 
   std::string log_file = std::string("restore.log");
@@ -452,22 +459,22 @@ void verilator::restore(uint32_t id) {
   std::string cmd = "cp " + image_dir + "/simx.vcd ./logs/simx.vcd";
   system(cmd.c_str());
 
-  std::map<uint32_t, IPC_MESSAGE*>::iterator it;
+  //std::map<uint32_t, IPC_MESSAGE*>::iterator it;
 
-  IPC_MESSAGE* dst = (IPC_MESSAGE*) ipc_ptr;
-  IPC_MESSAGE* src = NULL;
+  //IPC_MESSAGE* dst = (IPC_MESSAGE*) ipc_ptr;
+  //IPC_MESSAGE* src = NULL;
 
-  it = ipc_snapshots.find(id);
-  if( it != ipc_snapshots.end())
-    src = it->second;
-  else
-    klee_error("unable to restore hw snapshot, verilator ipc snapshot missing");
+  //it = ipc_snapshots.find(id);
+  //if( it != ipc_snapshots.end())
+  //  src = it->second;
+  //else
+  //  klee_error("unable to restore hw snapshot, verilator ipc snapshot missing");
 
-  dst->irq_status  = src->irq_status  ;
-  dst->address     = src->address     ;
-  dst->type        = src->type        ;
-  dst->value       = src->value       ;
-  dst->status      = src->status      ;
+  //dst->irq_status  = src->irq_status  ;
+  //dst->address     = src->address     ;
+  //dst->type        = src->type        ;
+  //dst->value       = src->value       ;
+  //dst->status      = src->status      ;
 
   //printf("irq_status    = %c\n", src->irq_status);
   //printf("address       = %08x\n", src->address);

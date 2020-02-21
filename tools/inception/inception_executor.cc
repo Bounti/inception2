@@ -772,15 +772,25 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(mo->getOffsetExpr(address), value);
-          if( forwarded_mem.count(mo->address) > 0 ) {
+          
+          std::map<uint64_t, Target*>::iterator it;
 
-            io->write(address, value, type);
+          it = forwarded_mem.find(mo->address);
+          if (it != forwarded_mem.end()) {
+            Target* device = it->second;
+
+            device->write(address, value, type);
           }
         }
       } else {
 
-        if( forwarded_mem.count(mo->address) > 0 ) {
-          ref<Expr> result = io->read(address, type);
+        std::map<uint64_t, Target*>::iterator it;
+
+        it = forwarded_mem.find(mo->address);
+        if (it != forwarded_mem.end()) {
+          Target* device = it->second;
+
+          ref<Expr> result = device->read(address, type);
 
           bindLocal(target, state, result);
         } else {

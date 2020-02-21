@@ -36,7 +36,7 @@ Copyright (C) 2017 Corteggiani Nassim <Corteggiani>
 #include <thread>
 #include <stack>
 
-#define SNP_MAX 100
+#define SNP_MAX 500
 
 using namespace std;
 using namespace klee;
@@ -67,7 +67,7 @@ static void irq_handler(device* io_irq) {
     uint32_t error_code;
 
     io_irq->receive(buffer, 8);
-    
+
     error_code |= buffer[3] << 24;
     error_code |= buffer[2] << 16;
     error_code |= buffer[1] << 8;
@@ -97,18 +97,18 @@ usb3dap::usb3dap() {
 
 usb3dap::~usb3dap() {}
 
-void usb3dap::init() {  
+void usb3dap::init() {
   io_irq->init();
   io->init();
 
-  snapshot_length = 10752+32;
+  snapshot_length = 10752+32+64;
 
   snapshot_index = 0x00100000;
 
   snp_counter = 0;
 
   irq_lock = false;
-  
+
   irq_running = true;
   irq_handler_thread = new std::thread(irq_handler, io_irq);
   irq_handler_thread->detach();
@@ -329,19 +329,19 @@ void usb3dap::irq_ack(){
   write(0x43c20000, 0x4);
 }
 
-uint32_t usb3dap::save(uint32_t id) { 
+uint32_t usb3dap::save(uint32_t id) {
 
   irq_lock = true;
 
   if(id == 0) {
-    id = ++snp_counter; 
-    
+    id = ++snp_counter;
+
     // set a watermark on hardware so that we can identify precisely from where the interrupt are coming
     write(0x43c20014, id);
 
     printf("watermark on device with id %08x\n", read(0x43c20014));
   }
-
+  //return id;
 
   uint32_t from = snapshot_index+((snapshot_length*SNP_MAX)/8);
   uint32_t to   = snapshot_index+((snapshot_length*id)/8);
@@ -360,7 +360,7 @@ uint32_t usb3dap::save(uint32_t id) {
   write(0x43c0000C, 0);
 
   while(read(0x43c00010) == 0);
-  sleep(0.2);
+  //sleep(0.2);
 
   restore(id);
 
@@ -368,11 +368,13 @@ uint32_t usb3dap::save(uint32_t id) {
 }
 
 void usb3dap::restore(uint32_t id) {
+  //return;
+
   irq_lock = true;
 
   uint32_t from = snapshot_index+((snapshot_length*id)/8);
   uint32_t to   = snapshot_index+((snapshot_length*SNP_MAX)/8);
-  
+
   klee_message("        restoring snapshot %d - saving snapshot at %08x and loading one at %08x", id, to, from);
 
   // from
@@ -387,12 +389,12 @@ void usb3dap::restore(uint32_t id) {
   write(0x43c0000C, 0);
 
   while(read(0x43c00010) != 1);
-  sleep(0.2);
+  //sleep(0.2);
 
   unsigned int state_id = read(0x43c20014);
   if( state_id != id)
     klee_error("hardware state is inconsistent... observed state id %d; expected %d\nclosing analysis", state_id, id);
-  
+
   irq_lock = false;
 }
 
