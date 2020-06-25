@@ -41,10 +41,6 @@ using namespace klee;
 using namespace llvm;
 
 
-namespace klee {
-  extern RNG theRNG;
-}
-
 Searcher::~Searcher() {
 }
 
@@ -209,9 +205,10 @@ RandomSearcher::update(ExecutionState *current,
 
 ///
 
-WeightedRandomSearcher::WeightedRandomSearcher(WeightType _type)
+WeightedRandomSearcher::WeightedRandomSearcher(WeightType type, RNG &rng)
   : states(new DiscretePDF<ExecutionState*>()),
-    type(_type) {
+    theRNG{rng},
+    type(type) {
   switch(type) {
   case Depth:
   case RP:
@@ -304,8 +301,10 @@ bool WeightedRandomSearcher::empty() {
   return states->empty();
 }
 
-RandomPathSearcher::RandomPathSearcher(PTree &_processTree)
-    : processTree(_processTree), idBitMask(_processTree.getNextId()) {}
+///
+RandomPathSearcher::RandomPathSearcher(PTree &processTree, RNG &rng)
+  : processTree{processTree}, theRNG{rng}, idBitMask{processTree.getNextId()} {
+}
 
 RandomPathSearcher::~RandomPathSearcher() {
 }

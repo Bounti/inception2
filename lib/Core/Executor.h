@@ -18,6 +18,7 @@
 #include "ExecutionState.h"
 #include "UserSearcher.h"
 
+#include "klee/ADT/RNG.h"
 #include "klee/Core/Interpreter.h"
 #include "klee/Expr/ArrayCache.h"
 #include "klee/Expr/ArrayExprOptimizer.h"
@@ -111,9 +112,10 @@ public:
     Unhandled
   };
 
-bool is_state_heuristic_enabled;
+  /// The random number generator.
+  RNG theRNG;
 
-protected:
+private:
   static const char *TerminateReasonNames[];
 
   std::unique_ptr<KModule> kmodule;
