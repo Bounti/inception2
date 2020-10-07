@@ -97,18 +97,9 @@ void DFSSearcher::update(ExecutionState *current,
     if (state == states.back()) {
       states.pop_back();
     } else {
-      __attribute__((unused))
-      bool ok = false;
-
-      for (auto it = states.begin(), ie = states.end(); it != ie; ++it) {
-        if (state == *it) {
-          states.erase(it);
-          ok = true;
-          break;
-        }
-      }
-
-      assert(ok && "invalid state removed");
+      auto it = std::find(states.begin(), states.end(), state);
+      assert(it != states.end() && "invalid state removed");
+      states.erase(it);
     }
   }
 }
@@ -151,18 +142,9 @@ void BFSSearcher::update(ExecutionState *current,
     if (state == states.front()) {
       states.pop_front();
     } else {
-      __attribute__((unused))
-      bool ok = false;
-
-      for (auto it = states.begin(), ie = states.end(); it != ie; ++it) {
-        if (state == *it) {
-          states.erase(it);
-          ok = true;
-          break;
-        }
-      }
-
-      assert(ok && "invalid state removed");
+      auto it = std::find(states.begin(), states.end(), state);
+      assert(it != states.end() && "invalid state removed");
+      states.erase(it);
     }
   }
 }
@@ -192,18 +174,9 @@ void RandomSearcher::update(ExecutionState *current,
 
   // remove states
   for (const auto state : removedStates) {
-    __attribute__((unused))
-    bool ok = false;
-
-    for (auto it = states.begin(), ie = states.end(); it != ie; ++it) {
-      if (state == *it) {
-        states.erase(it);
-        ok = true;
-        break;
-      }
-    }
-
-    assert(ok && "invalid state removed");
+    auto it = std::find(states.begin(), states.end(), state);
+    assert(it != states.end() && "invalid state removed");
+    states.erase(it);
   }
 }
 
