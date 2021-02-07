@@ -46,6 +46,7 @@ extern void *__dso_handle __attribute__ ((__weak__));
 
 object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
   std::error_code ec;
+  *success = false;
 
   for (object::symbol_iterator I = elf->symbols().begin(),
                                E = elf->symbols().end();
@@ -66,7 +67,6 @@ object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expe
 
     //addCustomObject(name, addr, size, false, false, false, false);
   }
-  *success = false;
   return object::SymbolRef();
 }
 
@@ -493,8 +493,8 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       bool success = false;
       auto symbol = resolve_elf_symbol_by_name(f->getName(), &success);
 
-      auto symbol_address = symbol.getAddress();
       if(success) {
+        auto symbol_address = symbol.getAddress();
         device_address = symbol_address.get();
         success = true;
         klee_message("mapping function %s to device address %016lx", f->getName().str().c_str(), device_address);
@@ -618,19 +618,20 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       bool success = false;
       auto symbol = resolve_elf_symbol_by_name(v->getName(), &success);
       uint64_t device_address;
-      
-      auto symbol_address = symbol.getAddress();
+
       if(success) {
+        auto symbol_address = symbol.getAddress();
         device_address = symbol_address.get();
         success = true;
         klee_message("mapping object %s to device address %016lx", v->getName().str().c_str(), device_address);
         mo = addCustomObject(v->getName(), device_address, size,
-                                           /*isReadOnly*/false, /*isSymbolic*/false,
-                                           /*isRandomized*/false, /*isForwarded*/false, "", v);
+            /*isReadOnly*/false, /*isSymbolic*/false,
+            /*isRandomized*/false, /*isForwarded*/false, "", v);
       } else {
+
         mo = memory->allocate(size, /*isLocal=*/false,
-                                          /*isGlobal=*/true, /*allocSite=*/v,
-                                          /*alignment=*/globalObjectAlignment);
+            /*isGlobal=*/true, /*allocSite=*/v,
+            /*alignment=*/globalObjectAlignment);
         klee_message("object %s to address %016lx", v->getName().str().c_str(), mo->address);
       }
 

@@ -41,7 +41,7 @@ enable_hw_snapshot("enable_hw_snapshot",
 
 cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"), cl::Required);
 
-cl::opt<std::string> interrupt_conf_file("interrupt_conf_file", cl::desc("<interrupt configuration file>"));
+cl::opt<std::string> interrupt_conf_file("interrupt_conf_file", cl::desc("<interrupt configuration file>"), cl::Required);
 
 static void parseArguments(int argc, char **argv) {
   // cl::SetVersionPrinter(klee::printVersion);
