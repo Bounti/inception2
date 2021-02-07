@@ -1,7 +1,7 @@
 #ifndef KLEE_HANDLER_H
 #define KLEE_HANDLER_H
 
-#include "klee/Interpreter.h"
+#include "klee/Core/Interpreter.h"
 #include "llvm/ADT/SmallString.h"
 
 using namespace klee;

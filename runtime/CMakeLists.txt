@@ -11,7 +11,7 @@ add_subdirectory(Runtest)
 
 # Handle bitcode libraries
 # Define the different configurations to be compiled and made available using a specific suffix
-set(bc_architectures 64)
+set(bc_architectures 32)
 
 # Compile 32bit support if available
 if (M32_SUPPORTED)
@@ -74,6 +74,8 @@ set(LIB_BC_FLAGS_32
 set(COMMON_CC_FLAGS
         "-I${CMAKE_SOURCE_DIR}/include"
         "-I${CMAKE_BINARY_DIR}/include"
+        -mcpu=cortex-m7 -mthumb -mfloat-abi=soft -target armv7m-none-eabi
+        -I/usr/include/newlib/
         -g
         -D_DEBUG
         -D_FORTIFY_SOURCE=0

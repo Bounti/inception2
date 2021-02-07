@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
+// #include <sys/socket.h>
 #include <unistd.h>
 
 char *__fgets_chk(char *s, size_t size, int strsize, FILE *stream) {
@@ -58,13 +58,13 @@ ssize_t __recv_chk(int fd, void *buf, size_t len, size_t buflen, int flag) {
   return recv(fd, buf, len, flag);
 }
 
-ssize_t __recvfrom_chk(int fd, void *buf, size_t len, size_t buflen, int flag,
-                       struct sockaddr *from, socklen_t *fromlen) {
-  if (len > buflen)
-    klee_report_error(__FILE__, __LINE__, "recvfrom overflow", "ptr.err");
-
-  return recvfrom(fd, buf, len, flag, from, fromlen);
-}
+// ssize_t __recvfrom_chk(int fd, void *buf, size_t len, size_t buflen, int flag,
+                       // struct sockaddr *from, socklen_t *fromlen) {
+  // if (len > buflen)
+    // klee_report_error(__FILE__, __LINE__, "recvfrom overflow", "ptr.err");
+//
+  // return recvfrom(fd, buf, len, flag, from, fromlen);
+// }
 
 char *__stpncpy_chk(char *dest, const char *src, size_t n, size_t destlen) {
   if (n > destlen)

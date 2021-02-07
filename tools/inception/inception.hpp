@@ -2,17 +2,17 @@
 #define KLEE_API_H
 
 #include "klee/Config/Version.h"
-#include "klee/ExecutionState.h"
-#include "klee/Expr.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
-#include "klee/Internal/Support/ModuleUtil.h"
-#include "klee/Internal/Support/PrintVersion.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Interpreter.h"
-#include "klee/OptionCategories.h"
-#include "klee/SolverCmdLine.h"
-#include "klee/Statistics.h"
+#include "ExecutionState.h"
+#include "klee/Expr/Expr.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+#include "klee/Support/ModuleUtil.h"
+#include "klee/Support/PrintVersion.h"
+#include "klee/System/Time.h"
+#include "klee/Core/Interpreter.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Solver/SolverCmdLine.h"
+#include "klee/Statistics/Statistics.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -20,7 +20,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/LegacyPassManager.h"
+//#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/CommandLine.h"
@@ -51,16 +51,28 @@
 #include "klee-handler.hpp"
 #include "device/device.hpp"
 
-#include "klee/Internal/Module/LLVMPassManager.h"
+//#include "klee/Internal/Module/LLVMPassManager.h"
 
 #include "inception_executor.hpp"
 #include "target/target.hpp"
 
-#include "target/openocd/openocd.hpp"
+#ifdef TARGET_JLINK_ACTIVE
 #include "target/jlink/jlink.hpp"
-#include "target/verilator/verilator.hpp"
+#endif
+
+#ifdef TARGET_STEROIDS_ACTIVE
 #include "target/usb3dap/usb3dap.hpp"
-#include "target/dummy/dummy.hpp"
+#endif
+
+#ifdef TARGET_VERILATOR_ACTIVE
+#include "target/verilator/verilator.hpp"
+#endif
+
+#ifdef TARGET_OPENOCD_ACTIVE
+#include "target/openocd/openocd.hpp"
+#endif
+
+//#include "target/dummy/dummy.hpp"
 
 using namespace llvm;
 using namespace klee;
@@ -90,12 +102,12 @@ public:
 
     handler->setInterpreter(interpreter);
 
-    std::vector<Target*>::iterator it;  
-    
+    std::vector<Target*>::iterator it;
+
     for (it = targets.begin() ; it != targets.end(); ++it) {
       Target* target = *it;
       interpreter->add_target(target);
-    } 
+    }
   }
 
   ~Inception() { shutdown(); };
@@ -105,13 +117,15 @@ public:
   void load_configuration(char **argv) {
 
     std::string LibraryDir = KleeHandler::getRunTimeLibraryPath(argv[0]);
+    
+    std::string errorMsg;
+    LLVMContext ctx;
 
-    Interpreter::ModuleOptions Opts(LibraryDir.c_str(), "main",
-                                    /*Optimize=*/false,
-                                    /*CheckDivZero=*/true,
-                                    /*CheckOvershift=*/true);
+    Interpreter::ModuleOptions Opts(LibraryDir.c_str(), "main", "32",
+                                  /*Optimize=*/true,
+                                  /*CheckDivZero=*/true,
+                                  /*CheckOvershift=*/true);
 
-    std::vector<std::unique_ptr<llvm::Module>> loadedModules;
     loadedModules.emplace_back(std::move(mainModule));
 
     auto finalModule = interpreter->setModule(loadedModules, Opts);
@@ -186,6 +200,8 @@ private:
   std::string bc_file_name;
 
   std::vector<Target*> targets;
+
+  std::vector<std::unique_ptr<llvm::Module>> loadedModules;
 
   Target* resolve_target(std::string name) {
 

@@ -1,14 +1,15 @@
 #ifndef INCEPTION_EXECUTOR
 #define INCEPTION_EXECUTOR
 
-#include "klee/ExecutionState.h"
-#include "klee/Interpreter.h"
+#include "ExecutionState.h"
+#include "klee/Core/Interpreter.h"
 #include "../lib/Core/Executor.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Object/ObjectFile.h"
 #include "device/device.hpp"
 #include "target/target.hpp"
+#include "klee/Support/ErrorHandling.h"
 
 #include "target/openocd/openocd.hpp"
 #include "target/jlink/jlink.hpp"

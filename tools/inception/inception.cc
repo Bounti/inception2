@@ -1,11 +1,19 @@
 #include "inception.hpp"
 
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Object/Binary.h"
+#include "llvm/BinaryFormat/Magic.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/Object/Error.h"
+#include "llvm/Object/Binary.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/ErrorOr.h"
 
 #include <iostream>
 #include <string>
 
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
 #include <jsoncpp/json/json.h>
 
 using namespace llvm;
@@ -15,6 +23,23 @@ min_irq_threshold("min_irq_threshold",
           cl::init(100),
           cl::desc("set minimal number of lines to reach before rising irq (default=100)"));
 
+cl::opt<std::string>
+EntryPoint("entry-point",
+          cl::desc("Function in which to start execution (default=main)"),
+          cl::init("main"));
+
+namespace llvm {
+
+  // Various helper functions.
+  LLVM_ATTRIBUTE_NORETURN void reportError(Error Err, StringRef Input);
+  void reportWarning(Error Err, StringRef Input);
+
+  template <class T> T unwrapOrError(StringRef Input, Expected<T> EO) {
+    if (EO)
+      return *EO;
+    reportError(EO.takeError(), Input);
+  }
+} // namespace llvm
 
 uint32_t to_hexa(std::string str) {
   std::stringstream ss;
@@ -37,22 +62,40 @@ void Inception::load_elf_binary_from_file(const char* _elf_file_name) {
     klee::klee_error("Unable to locate ELF file or directory : %s ", _elf_file_name);
   }
 
-  ErrorOr<object::OwningBinary<object::Binary>> Binary =
-      object::createBinary(_elf_file_name);
-  if (std::error_code err = Binary.getError()) {
-    klee::klee_error("Unknown binary file format : %s ", _elf_file_name);
+  auto obinary = llvm::object::createBinary(_elf_file_name);
+  if (obinary) {
+    auto executable = std::move(*obinary);
+
+    std::pair<std::unique_ptr<object::Binary>, std::unique_ptr<MemoryBuffer>> res = executable.takeBinary();
+
+    //llvm::ErrorOr<std::unique_ptr<llvm::object::ObjectFile>>
+    llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> ret = object::ObjectFile::createObjectFile(res.second.release()->getMemBufferRef());
+
+    TempExecutable.swap(ret.get());
+
+    interpreter->set_elf(TempExecutable);
+    //llvm::object::Binary &Binary = *OBinary.getBinary();
   } else {
-    if (Binary.get().getBinary()->isObject()) {
-      std::pair<std::unique_ptr<object::Binary>, std::unique_ptr<MemoryBuffer>>
-          res = Binary.get().takeBinary();
-      ErrorOr<std::unique_ptr<object::ObjectFile>> ret =
-          object::ObjectFile::createObjectFile(
-              res.second.release()->getMemBufferRef());
-      TempExecutable.swap(ret.get());
-    }
+    klee::klee_error("Unknown binary file format : %s ", _elf_file_name);
   }
 
-  interpreter->set_elf(TempExecutable);
+  //Expected<llvm::object::OwningBinary<llvm::object::Binary>> Binary =
+  //    object::createBinary(_elf_file_name);
+  //OwningBinary<Binary> OBinary = unwrapOrError(createBinary(_elf_file_name), file);
+  //if (std::error_code err = Binary.getError()) {
+  //  klee::klee_error("Unknown binary file format : %s ", _elf_file_name);
+  //} else {
+  //  if (Binary.get().getBinary()->isObject()) {
+  //    std::pair<std::unique_ptr<object::Binary>, std::unique_ptr<MemoryBuffer>>
+  //        res = Binary.get().takeBinary();
+  //        llvm::ErrorOr<std::unique_ptr<llvm::object::ObjectFile>> ret =
+  //        object::ObjectFile::createObjectFile(
+  //            res.second.release()->getMemBufferRef());
+  //    TempExecutable.swap(ret.get());
+  //  }
+  //}
+
+  //interpreter->set_elf(TempExecutable);
 }
 
 // Load Targets env
@@ -188,7 +231,6 @@ void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
 
   // Load the bytecode...
   std::string errorMsg;
-  std::vector<std::unique_ptr<llvm::Module>> loadedModules;
 
   if (!klee::loadFile(bc_file_name, ctx, loadedModules, errorMsg)) {
     klee::klee_error("error loading program '%s': %s", bc_file_name,
@@ -226,7 +268,9 @@ void Inception::prepare() {
     // get entry point from ELF symbols table
 
     // otherwise get main
-    main_fct = mainModule->getFunction("main");
+    main_fct = mainModule->getFunction(EntryPoint);
+    if (!main_fct)
+      klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
   }
 
   interpreter->initFunctionAsMain(main_fct, 0, pArgv, pEnvp);
@@ -244,21 +288,33 @@ void Inception::add_target(std::string name, std::string type, std::string binar
   if( resolve_target(name) != NULL )
     return;
 
+  #ifdef TARGET_STEROIDS_ACTIVE
   if( type.compare("usb3_dap") == 0 ) {
     target = new usb3dap();
-  } else if ( type.compare("jlink") == 0 ) {
+  }
+  #endif
+  #ifdef TARGET_JLINK_ACTIVE
+  if ( type.compare("jlink") == 0 ) {
     target = new jlink();
     target->setArgs(args);
-  } else if( type.compare("openocd") == 0 ) {
+  }
+  #endif
+  #ifdef TARGET_VERILATOR_ACTIVE
+  if( type.compare("openocd") == 0 ) {
     target = new openocd();
     target->setArgs(args);
-  } else if( type.compare("verilator") == 0 ) {
+  }
+  #endif
+  #ifdef TARGET_VERILATOR_ACTIVE
+  if( type.compare("verilator") == 0 ) {
     target = new verilator();
     target->setBinary(binary);
     target->setArgs(args);
-  } else if( type.compare("dummy") == 0 ) {
-    target = new dummy();
   }
+  #endif
+  //else if( type.compare("dummy") == 0 ) {
+    //target = new dummy();
+  //}
 
   if(target == NULL) {
     klee_error("targets configuration does not support %s", type.c_str());

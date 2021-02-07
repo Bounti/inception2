@@ -22,6 +22,8 @@ using namespace std;
 #include "device/device.hpp"
 #include "target/target.hpp"
 
+#include "klee/Support/ErrorHandling.h"
+
 /*
  * Arguments specific to Inception
  */
@@ -37,7 +39,7 @@ enable_hw_snapshot("enable_hw_snapshot",
           cl::init(false),
           cl::desc("<enable hardware snapshot> (default=false)"));
 
-cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"));
+cl::opt<std::string> mem_conf_file("mem_conf_file", cl::desc("<memory configuration file>"), cl::Required);
 
 cl::opt<std::string> interrupt_conf_file("interrupt_conf_file", cl::desc("<interrupt configuration file>"));
 
@@ -45,6 +47,21 @@ static void parseArguments(int argc, char **argv) {
   // cl::SetVersionPrinter(klee::printVersion);
   // This version always reads response files
   cl::ParseCommandLineOptions(argc, argv, " klee\n");
+}
+
+static bool interrupted = false;
+static Inception *inception = nullptr;
+
+static void interrupt_handle() {
+  if (!interrupted && inception) {
+    llvm::errs() << "KLEE: ctrl-c detected, requesting interpreter to halt.\n";
+    inception->shutdown();
+    sys::SetInterruptFunction(interrupt_handle);
+  } else {
+    llvm::errs() << "KLEE: ctrl-c detected, exiting.\n";
+    exit(1);
+  }
+  interrupted = true;
 }
 
 int main(int argc, char **argv) {
@@ -61,13 +78,15 @@ int main(int argc, char **argv) {
   llvm::InitializeNativeTarget();
 
   parseArguments(argc, argv);
-  sys::PrintStackTraceOnErrorSignal();
+  sys::PrintStackTraceOnErrorSignal(argv[0]);
+
+  sys::SetInterruptFunction(interrupt_handle);
 
   /*
    * This main is a refacto of the original klee code
    */
   // 1. We init Inception
-  Inception *inception = new Inception();
+  inception = new Inception();
 
   // 5. We load the configuration
   inception->load_targets_conf_from_file(mem_conf_file.c_str());

@@ -28,7 +28,7 @@
 #include <chrono> // std::chrono::seconds
 #include <thread> // std::this_thread::sleep_for
 
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
 
 enum TargetPlatform { JTAG, FPGA, SIMULATOR };
 

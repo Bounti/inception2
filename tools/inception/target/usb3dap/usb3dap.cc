@@ -26,8 +26,8 @@ Copyright (C) 2017 Corteggiani Nassim <Corteggiani>
 #include "usb3dap.hpp"
 #include "usb_device.hpp"
 
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Expr.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Expr/Expr.h"
 
 #include <cassert>
 #include <iomanip>

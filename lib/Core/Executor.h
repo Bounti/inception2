@@ -118,7 +118,8 @@ public:
   /// The random number generator.
   RNG theRNG;
 
-private:
+  bool is_state_heuristic_enabled;
+protected:
   static const char *TerminateReasonNames[];
 
   std::unique_ptr<KModule> kmodule;

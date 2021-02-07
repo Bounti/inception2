@@ -14,8 +14,8 @@ static int verbose;
 #define JLINKARM_TIF_JTAG 0
 #define JLINKARM_TIF_SWD  1
 
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Expr.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Expr/Expr.h"
 
 using namespace klee;
 

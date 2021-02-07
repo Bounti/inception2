@@ -34,7 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "klee/Expr.h"
+#include "klee/Expr/Expr.h"
 
 using namespace klee;
 

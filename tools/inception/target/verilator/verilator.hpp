@@ -3,7 +3,7 @@
 
 #include "target.hpp"
 
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include "criu.h"

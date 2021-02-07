@@ -1,50 +1,38 @@
 #include "inception_executor.hpp"
 
-#include "klee/ExecutionState.h"
-#include "klee/Expr.h"
+#include "ExecutionState.h"
+#include "klee/Expr/Expr.h"
 #include "../lib/Core/Executor.h"
 
-#include "../lib/Core/Context.h"
-#include "../lib/Core/CoreStats.h"
-#include "../lib/Core/ExecutorTimerInfo.h"
-#include "../lib/Core/ExternalDispatcher.h"
-#include "../lib/Core/ImpliedValue.h"
-#include "../lib/Core/Memory.h"
-#include "../lib/Core/MemoryManager.h"
-#include "../lib/Core/PTree.h"
-#include "../lib/Core/Searcher.h"
-#include "../lib/Core/SeedInfo.h"
-#include "../lib/Core/SpecialFunctionHandler.h"
-#include "../lib/Core/StatsTracker.h"
-#include "../lib/Core/TimingSolver.h"
-#include "../lib/Core/UserSearcher.h"
+#include "Context.h"
+#include "CoreStats.h"
+// #include "ExecutorTimerInfo.h"
+#include "ExternalDispatcher.h"
+#include "ImpliedValue.h"
+#include "Memory.h"
+#include "MemoryManager.h"
+#include "PTree.h"
+#include "Searcher.h"
+#include "SeedInfo.h"
+#include "SpecialFunctionHandler.h"
+#include "StatsTracker.h"
+#include "TimingSolver.h"
+#include "UserSearcher.h"
 
-#include "klee/Common.h"
+#include "klee/ADT/TreeStream.h"
 #include "klee/Config/Version.h"
-#include "klee/ExecutionState.h"
-#include "klee/Expr.h"
-#include "klee/Internal/ADT/KTest.h"
-#include "klee/Internal/ADT/RNG.h"
-#include "klee/Internal/Module/Cell.h"
-#include "klee/Internal/Module/InstructionInfoTable.h"
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
-#include "klee/Internal/Support/FloatEvaluation.h"
-#include "klee/Internal/Support/ModuleUtil.h"
-#include "klee/Internal/System/MemoryUsage.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Interpreter.h"
-#include "klee/OptionCategories.h"
-#include "klee/SolverCmdLine.h"
-#include "klee/SolverStats.h"
-#include "klee/TimerStatIncrementer.h"
-#include "klee/util/Assignment.h"
-#include "klee/util/ExprPPrinter.h"
-#include "klee/util/ExprSMTLIBPrinter.h"
-#include "klee/util/ExprUtil.h"
-#include "klee/util/GetElementPtrTypeIterator.h"
+#include "klee/Core/Interpreter.h"
+#include "klee/Expr/Expr.h"
+#include "klee/ADT/KTest.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Statistics/Statistics.h"
+#include "klee/Solver/SolverCmdLine.h"
+#include "klee/Support/Debug.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+#include "klee/Support/ModuleUtil.h"
+#include "klee/Support/PrintVersion.h"
+#include "klee/System/Time.h"
 
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Function.h"
@@ -57,19 +45,20 @@ namespace klee {
 extern void *__dso_handle __attribute__ ((__weak__));
 
 object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expected_name, bool *success) {
-  uint64_t addr, size;
-  StringRef name;
   std::error_code ec;
 
   for (object::symbol_iterator I = elf->symbols().begin(),
                                E = elf->symbols().end();
        I != E; ++I) {
 
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+    Expected<StringRef> symbol = I->getName();
+    
+    if ( symbol ) {
+      klee_warning("error while reading ELF symbol  %s", expected_name.c_str());
       continue;
     }
 
+    auto name = symbol.get();
     if( name.equals(expected_name) ) {
       *success = true;
       return *I;
@@ -82,18 +71,19 @@ object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expe
 }
 
 object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string expected_name, bool *success) {
-  StringRef name;
-  std::error_code ec;
 
   for (object::section_iterator I = elf->sections().begin(),
                                 E = elf->sections().end();
        I != E; ++I) {
-
-    if ((ec = I->getName(name))) {
-      klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
+  
+    Expected<StringRef> section = I->getName();
+    
+    if ( section ) {
+      klee_warning("error while reading ELF symbol  %s", expected_name.c_str());
       continue;
     }
 
+    auto name = section.get();
     if( name.equals(expected_name) ) {
       *success = true;
       return *I;
@@ -110,7 +100,7 @@ MemoryObject* InceptionExecutor::addCustomObject(std::string name, std::uint64_t
                                            bool isReadOnly, bool isSymbolic,
                                            bool isRandomized, bool isForwarded, std::string target_name, const llvm::Value* allocSite) {
 
-  klee_message("adding custom object at %08x with size %08x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
+  klee_message("adding custom object at %16x with size %16x with name %s - conf [ReadOnly;Symbolic;Randomized;Forwarded] %c|%c|%c|%c", addr, size, name.c_str(), isReadOnly ? 'Y':'N', isSymbolic ? 'Y':'N', isRandomized ? 'Y':'N', isForwarded ? 'Y':'N');
 
   auto mo = memory->allocateFixed(addr, size, allocSite);
 
@@ -168,117 +158,120 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     }
     case Instruction::Invoke:
     case Instruction::Call: {
-      // Ignore debug intrinsic calls
-      if (isa<DbgInfoIntrinsic>(i))
-        break;
-      CallSite cs(i);
+    // Ignore debug intrinsic calls
+    if (isa<DbgInfoIntrinsic>(i))
+      break;
 
-      unsigned numArgs = cs.arg_size();
-      Value *fp = cs.getCalledValue();
-      Function *f = getTargetFunction(fp, state);
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+    const CallBase &cs = cast<CallBase>(*i);
+    Value *fp = cs.getCalledOperand();
+#else
+    const CallSite cs(i);
+    Value *fp = cs.getCalledValue();
+#endif
 
-      // Skip debug intrinsics, we can't evaluate their metadata arguments.
-      if (isa<DbgInfoIntrinsic>(i))
-        break;
+    unsigned numArgs = cs.arg_size();
+    Function *f = getTargetFunction(fp, state);
 
-      if (isa<InlineAsm>(fp)) {
-        terminateStateOnExecError(state, "inline assembly is unsupported");
-        break;
-      }
-      // evaluate arguments
-      std::vector< ref<Expr> > arguments;
-      arguments.reserve(numArgs);
+    if (isa<InlineAsm>(fp)) {
+      terminateStateOnExecError(state, "inline assembly is unsupported");
+      break;
+    }
+    // evaluate arguments
+    std::vector< ref<Expr> > arguments;
+    arguments.reserve(numArgs);
 
-      for (unsigned j=0; j<numArgs; ++j)
-        arguments.push_back(eval(ki, j+1, state).value);
+    for (unsigned j=0; j<numArgs; ++j)
+      arguments.push_back(eval(ki, j+1, state).value);
 
-      if (f) {
-        const FunctionType *fType =
-          dyn_cast<FunctionType>(cast<PointerType>(f->getType())->getElementType());
-        const FunctionType *fpType =
-          dyn_cast<FunctionType>(cast<PointerType>(fp->getType())->getElementType());
+    if (f) {
+      const FunctionType *fType = 
+        dyn_cast<FunctionType>(cast<PointerType>(f->getType())->getElementType());
+      const FunctionType *fpType =
+        dyn_cast<FunctionType>(cast<PointerType>(fp->getType())->getElementType());
 
-        // special case the call with a bitcast case
-        if (fType != fpType) {
-          assert(fType && fpType && "unable to get function type");
+      // special case the call with a bitcast case
+      if (fType != fpType) {
+        assert(fType && fpType && "unable to get function type");
 
-          // XXX check result coercion
+        // XXX check result coercion
 
-          // XXX this really needs thought and validation
-          unsigned i=0;
-          for (std::vector< ref<Expr> >::iterator
-                 ai = arguments.begin(), ie = arguments.end();
-               ai != ie; ++ai) {
-            Expr::Width to, from = (*ai)->getWidth();
+        // XXX this really needs thought and validation
+        unsigned i=0;
+        for (std::vector< ref<Expr> >::iterator
+               ai = arguments.begin(), ie = arguments.end();
+             ai != ie; ++ai) {
+          Expr::Width to, from = (*ai)->getWidth();
+            
+          if (i<fType->getNumParams()) {
+            to = getWidthForLLVMType(fType->getParamType(i));
 
-            if (i<fType->getNumParams()) {
-              to = getWidthForLLVMType(fType->getParamType(i));
-
-              if (from != to) {
-                // XXX need to check other param attrs ?
-  #if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
-                bool isSExt = cs.paramHasAttr(i, llvm::Attribute::SExt);
-  #else
-                bool isSExt = cs.paramHasAttr(i+1, llvm::Attribute::SExt);
-  #endif
-                if (isSExt) {
-                  arguments[i] = SExtExpr::create(arguments[i], to);
-                } else {
-                  arguments[i] = ZExtExpr::create(arguments[i], to);
-                }
+            if (from != to) {
+              // XXX need to check other param attrs ?
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+              bool isSExt = cs.paramHasAttr(i, llvm::Attribute::SExt);
+#else
+              bool isSExt = cs.paramHasAttr(i+1, llvm::Attribute::SExt);
+#endif
+              if (isSExt) {
+                arguments[i] = SExtExpr::create(arguments[i], to);
+              } else {
+                arguments[i] = ZExtExpr::create(arguments[i], to);
               }
             }
+          }
+            
+          i++;
+        }
+      }
 
-            i++;
+      executeCall(state, ki, f, arguments);
+    } else {
+      ref<Expr> v = eval(ki, 0, state).value;
+
+      ExecutionState *free = &state;
+      bool hasInvalid = false, first = true;
+
+      /* XXX This is wasteful, no need to do a full evaluate since we
+         have already got a value. But in the end the caches should
+         handle it for us, albeit with some overhead. */
+      do {
+        v = optimizer.optimizeExpr(v, true);
+        ref<ConstantExpr> value;
+        bool success =
+            solver->getValue(free->constraints, v, value, free->queryMetaData);
+        assert(success && "FIXME: Unhandled solver failure");
+        (void) success;
+        StatePair res = fork(*free, EqExpr::create(v, value), true);
+        if (res.first) {
+          uint64_t addr = value->getZExtValue();
+          std::map<uint64_t, Function *>::iterator seek = inceptionLegalFunctions.find(addr);
+          if (seek != inceptionLegalFunctions.end()) {
+          // if (legalFunctions.count(addr)) {
+            // f = (Function*) addr;
+            f = seek->second;
+
+            // Don't give warning on unique resolution
+            if (res.second || !first)
+              klee_warning_once(reinterpret_cast<void*>(addr),
+                                "resolved symbolic function pointer to: %s",
+                                f->getName().data());
+
+            executeCall(*res.first, ki, f, arguments);
+          } else {
+            if (!hasInvalid) {
+              terminateStateOnExecError(state, "invalid function pointer");
+              hasInvalid = true;
+            }
           }
         }
 
-        executeCall(state, ki, f, arguments);
-      } else {
-        ref<Expr> v = eval(ki, 0, state).value;
-
-        ExecutionState *free = &state;
-        bool hasInvalid = false, first = true;
-
-        /* XXX This is wasteful, no need to do a full evaluate since we
-           have already got a value. But in the end the caches should
-           handle it for us, albeit with some overhead. */
-        do {
-          v = optimizer.optimizeExpr(v, true);
-          ref<ConstantExpr> value;
-          bool success = solver->getValue(*free, v, value);
-          assert(success && "FIXME: Unhandled solver failure");
-          (void) success;
-          StatePair res = fork(*free, EqExpr::create(v, value), true);
-          if (res.first) {
-            uint64_t addr = value->getZExtValue();
-            std::map<uint64_t, Function *>::iterator seek = inceptionLegalFunctions.find(addr);
-            if (seek != inceptionLegalFunctions.end()) {
-              f = seek->second;
-//            if (legalFunctions.count(addr)) {
-              //f = (Function*) addr;
-
-              // Don't give warning on unique resolution
-              if (res.second || !first)
-                klee_warning_once(reinterpret_cast<void*>(addr),
-                                  "resolved symbolic function pointer to: %s",
-                                  f->getName().data());
-
-              executeCall(*res.first, ki, f, arguments);
-            } else {
-              if (!hasInvalid) {
-                terminateStateOnExecError(state, "invalid function pointer");
-                hasInvalid = true;
-              }
-            }
-          }
-
-          first = false;
-          free = res.second;
-        } while (free);
-      }
-      break;
+        first = false;
+        free = res.second;
+      } while (free);
     }
+    break;
+  }
   case Instruction::Ret: {
     ReturnInst *ri = cast<ReturnInst>(i);
     KInstIterator kcaller = state.stack.back().caller;
@@ -301,7 +294,7 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     if (!isVoidReturn) {
       result = eval(ki, 0, state).value;
     }
-
+    
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
       terminateStateOnExit(state);
@@ -315,8 +308,41 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
         transferToBasicBlock(ii->getNormalDest(), caller->getParent(), state);
       } else {
         state.pc = kcaller;
-        if(!interrupted)
-          ++state.pc;
+        ++state.pc;
+      }
+
+      if (ri->getFunction()->getName() == "_klee_eh_cxx_personality") {
+        assert(dyn_cast<ConstantExpr>(result) &&
+               "result from personality fn must be a concrete value");
+
+        auto *sui = dyn_cast_or_null<SearchPhaseUnwindingInformation>(
+            state.unwindingInformation.get());
+        assert(sui && "return from personality function outside of "
+                      "search phase unwinding");
+
+        // unbind the MO we used to pass the serialized landingpad
+        state.addressSpace.unbindObject(sui->serializedLandingpad);
+        sui->serializedLandingpad = nullptr;
+
+        if (result->isZero()) {
+          // this lpi doesn't handle the exception, continue the search
+          unwindToNextLandingpad(state);
+        } else {
+          // a clause (or a catch-all clause or filter clause) matches:
+          // remember the stack index and switch to cleanup phase
+          state.unwindingInformation =
+              std::make_unique<CleanupPhaseUnwindingInformation>(
+                  sui->exceptionObject, cast<ConstantExpr>(result),
+                  sui->unwindingProgress);
+          // this pointer is now invalidated
+          sui = nullptr;
+          // continue the unwinding process (which will now start with the
+          // cleanup phase)
+          unwindToNextLandingpad(state);
+        }
+
+        // never return normally from the personality fn
+        break;
       }
 
       if (!isVoidReturn) {
@@ -325,10 +351,15 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
           // may need to do coercion due to bitcasts
           Expr::Width from = result->getWidth();
           Expr::Width to = getWidthForLLVMType(t);
-
+            
           if (from != to) {
-            CallSite cs = (isa<InvokeInst>(caller) ? CallSite(cast<InvokeInst>(caller)) :
-                           CallSite(cast<CallInst>(caller)));
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+            const CallBase &cs = cast<CallBase>(*caller);
+#else
+            const CallSite cs(isa<InvokeInst>(caller)
+                                  ? CallSite(cast<InvokeInst>(caller))
+                                  : CallSite(cast<CallInst>(caller)));
+#endif
 
             // XXX need to check other param attrs ?
 #if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
@@ -349,12 +380,11 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
         // We check that the return value has no users instead of
         // checking the type, since C defaults to returning int for
         // undeclared functions.
-        if (!caller->use_empty() && !interrupted) {
+        if (!caller->use_empty()) {
           terminateStateOnExecError(state, "return void when caller expected a result");
         }
-
       }
-    }
+    }      
     break;
   }
   case Instruction::Br: {
@@ -463,14 +493,11 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       bool success = false;
       auto symbol = resolve_elf_symbol_by_name(f->getName(), &success);
 
-
+      auto symbol_address = symbol.getAddress();
       if(success) {
-        if ((ec = symbol.getAddress(device_address))) {
-          klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-        } else {
-          success = true;
-          klee_message("mapping function %s to device address %016lx", f->getName().str().c_str(), device_address);
-        }
+        device_address = symbol_address.get();
+        success = true;
+        klee_message("mapping function %s to device address %016lx", f->getName().str().c_str(), device_address);
       } else {
         device_address = reinterpret_cast<std::uint64_t>(f);
       }
@@ -591,17 +618,12 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
       bool success = false;
       auto symbol = resolve_elf_symbol_by_name(v->getName(), &success);
       uint64_t device_address;
-
+      
+      auto symbol_address = symbol.getAddress();
       if(success) {
-        if ((ec = symbol.getAddress(device_address))) {
-          klee_warning("error while reading ELF symbol  %s", ec.message().c_str());
-        } else {
-          success = true;
-          klee_message("mapping object %s to device address %016lx", v->getName().str().c_str(), device_address);
-        }
-      }
-
-      if( success ){
+        device_address = symbol_address.get();
+        success = true;
+        klee_message("mapping object %s to device address %016lx", v->getName().str().c_str(), device_address);
         mo = addCustomObject(v->getName(), device_address, size,
                                            /*isReadOnly*/false, /*isSymbolic*/false,
                                            /*isRandomized*/false, /*isForwarded*/false, "", v);
@@ -610,7 +632,6 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
                                           /*isGlobal=*/true, /*allocSite=*/v,
                                           /*alignment=*/globalObjectAlignment);
         klee_message("object %s to address %016lx", v->getName().str().c_str(), mo->address);
-
       }
 
       if (!mo)
@@ -663,9 +684,16 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
                                       ref<Expr> value /* undef if read */,
                                       KInstruction *target /* undef if write */) {
 
-  Expr::Width type = (isWrite ? value->getWidth() :
+  Expr::Width type = (isWrite ? value->getWidth() : 
                      getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
+
+  // if (SimplifySymIndices) {
+    // if (!isa<ConstantExpr>(address))
+      // address = ConstraintManager::simplifyExpr(state.constraints, address);
+    // if (isWrite && !isa<ConstantExpr>(value))
+      // value = ConstraintManager::simplifyExpr(state.constraints, value);
+  // }
 
   address = optimizer.optimizeExpr(address, true);
 
@@ -688,7 +716,8 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
 
     bool inBounds;
     solver->setTimeout(coreSolverTimeout);
-    bool success = solver->mustBeTrue(state, check, inBounds);
+    bool success = solver->mustBeTrue(state.constraints, check, inBounds,
+                                      state.queryMetaData);
     solver->setTimeout(time::Span());
     if (!success) {
       state.pc = state.prevPC;
@@ -954,12 +983,10 @@ void InceptionExecutor::sanitize_hw_state(ExecutionState* current_state, Executi
  * Futermore, it enables overriding subsequent methods such as executeMemoryOperation
 */
 void InceptionExecutor::run(ExecutionState &initialState) {
-
   bindModuleConstants();
 
-  // Delay init till now so that ticks don't accrue during
-  // optimization and such.
-  initTimers();
+  // Delay init till now so that ticks don't accrue during optimization and such.
+  timers.reset();
 
   states.insert(&initialState);
 
@@ -1141,17 +1168,15 @@ void InceptionExecutor::initFunctionAsMain(Function *f,
       }
     }
   }
-
-  initializeGlobals(*init_state);
 }
 
 void InceptionExecutor::start_analysis() {
-  processTree = new PTree(init_state);
-  init_state->ptreeNode = processTree->root;
-  run(*init_state);
  
-  delete processTree;
-  processTree = 0;
+  initializeGlobals(*init_state);
+
+  processTree = std::make_unique<PTree>(init_state);
+  run(*init_state);
+  processTree = nullptr;
 
   // hack to clear memory objects
   delete memory;
