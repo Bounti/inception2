@@ -15,8 +15,19 @@
 
 #include "klee/Support/ErrorHandling.h"
 #include <jsoncpp/json/json.h>
+#include "target/dummy.hpp"
 
 using namespace llvm;
+
+cl::OptionCategory LinkCat("Linking options",
+    "These options control the libraries being linked.");
+
+cl::list<std::string>
+LinkLibraries("link-llvm-lib",
+    cl::desc("Link the given bitcode library before execution, "
+      "e.g. .bca, .bc, .a. Can be used multiple times."),
+    cl::value_desc("bitcode library file"), cl::cat(LinkCat));
+
 
 cl::opt<int>
 min_irq_threshold("min_irq_threshold",
@@ -27,6 +38,13 @@ cl::opt<std::string>
 EntryPoint("entry-point",
           cl::desc("Function in which to start execution (default=main)"),
           cl::init("main"));
+  
+cl::opt<std::string> RuntimeBuild(
+    "runtime-build",
+    cl::desc("Link with versions of the runtime library that were built with "
+      "the provided configuration (default=" RUNTIME_CONFIGURATION
+      ")."),
+    cl::init(RUNTIME_CONFIGURATION), cl::cat(LinkCat));
 
 namespace llvm {
 
@@ -50,6 +68,41 @@ uint32_t to_hexa(std::string str) {
   ss.clear();
 
   return res;
+}
+
+void Inception::load_configuration(char **argv) {
+
+  std::string LibraryDir = KleeHandler::getRunTimeLibraryPath(argv[0]);
+
+  // Push the module as the first entry
+  loadedModules.emplace_back(std::move(mainModule));
+
+  std::string errorMsg;
+  LLVMContext ctx;
+  
+  // Add additional user-selected suffix
+  std::string opt_suffix = "32"; //_" + RuntimeBuild.getValue();
+
+  Interpreter::ModuleOptions Opts(LibraryDir.c_str(), EntryPoint, opt_suffix,
+                                /*Optimize=*/true,
+                                /*CheckDivZero=*/true,
+                                /*CheckOvershift=*/true);
+
+  for (const auto &library : LinkLibraries) {
+    if (!klee::loadFile(library, mainModule->getContext(), loadedModules,
+          errorMsg))
+      klee_error("error loading bitcode library '%s': %s", library.c_str(),
+          errorMsg.c_str());
+    else
+      klee_warning("loading bitcode library '%s': %s", library.c_str(),
+          errorMsg.c_str());
+  }
+
+  auto finalModule = interpreter->setModule(loadedModules, Opts);
+
+  mainModule = finalModule;
+
+  // mainModule->print(llvm::errs(), nullptr);
 }
 
 // Load ELF binary
@@ -115,10 +168,10 @@ void Inception::load_targets_conf_from_file(const char* _targets_conf_file) {
     config_file >> (*json);
 
     // Parse expected configuration
-    auto irq_section = ((*json)["targets"]);
+    auto target_section = ((*json)["targets"]);
 
-    auto it = irq_section.begin();
-    auto limit = irq_section.end();
+    auto it = target_section.begin();
+    auto limit = target_section.end();
 
     for(; it!=limit ;it++) {
 
@@ -233,7 +286,7 @@ void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
   std::string errorMsg;
 
   if (!klee::loadFile(bc_file_name, ctx, loadedModules, errorMsg)) {
-    klee::klee_error("error loading program '%s': %s", bc_file_name,
+    klee::klee_error("error loading program '%s': %s", bc_file_name.c_str(),
                errorMsg.c_str());
   }
 
@@ -243,7 +296,7 @@ void Inception::load_llvm_bitcode_from_file(const char *_bc_file_name) {
   std::unique_ptr<llvm::Module> M(klee::linkModules(
       loadedModules, "" /* link all mainModules together */, errorMsg));
   if (!M) {
-    klee::klee_error("error loading program '%s': %s", bc_file_name,
+    klee::klee_error("error loading program '%s': %s", bc_file_name.c_str(),
                errorMsg.c_str());
   }
 
@@ -269,8 +322,10 @@ void Inception::prepare() {
 
     // otherwise get main
     main_fct = mainModule->getFunction(EntryPoint);
-    if (!main_fct)
+    if (!main_fct) {
+      mainModule->print(llvm::errs(), nullptr);
       klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
+    }
   }
 
   interpreter->initFunctionAsMain(main_fct, 0, pArgv, pEnvp);
@@ -312,9 +367,9 @@ void Inception::add_target(std::string name, std::string type, std::string binar
     target->setArgs(args);
   }
   #endif
-  //else if( type.compare("dummy") == 0 ) {
-    //target = new dummy();
-  //}
+  if( type.compare("dummy") == 0 ) {
+    target = new dummy();
+  }
 
   if(target == NULL) {
     klee_error("targets configuration does not support %s", type.c_str());

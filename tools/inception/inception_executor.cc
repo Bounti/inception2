@@ -48,19 +48,20 @@ object::SymbolRef InceptionExecutor::resolve_elf_symbol_by_name(std::string expe
   std::error_code ec;
   *success = false;
 
+  if(!elf)
+    return object::SymbolRef();
+
   for (object::symbol_iterator I = elf->symbols().begin(),
                                E = elf->symbols().end();
        I != E; ++I) {
-
     Expected<StringRef> symbol = I->getName();
     
-    if ( symbol ) {
-      klee_warning("error while reading ELF symbol  %s", expected_name.c_str());
-      continue;
-    }
 
     auto name = symbol.get();
     if( name.equals(expected_name) ) {
+      *success = true;
+      return *I;
+    } else if( name.find(expected_name+".") != std::string::npos) {
       *success = true;
       return *I;
     }
@@ -75,13 +76,9 @@ object::SectionRef InceptionExecutor::resolve_elf_section_by_name(std::string ex
   for (object::section_iterator I = elf->sections().begin(),
                                 E = elf->sections().end();
        I != E; ++I) {
-  
+    
     Expected<StringRef> section = I->getName();
     
-    if ( section ) {
-      klee_warning("error while reading ELF symbol  %s", expected_name.c_str());
-      continue;
-    }
 
     auto name = section.get();
     if( name.equals(expected_name) ) {
@@ -387,47 +384,6 @@ void InceptionExecutor::executeInstruction(ExecutionState &state, KInstruction *
     }      
     break;
   }
-  case Instruction::Br: {
-    BranchInst *bi = cast<BranchInst>(i);
-    if (bi->isUnconditional()) {
-      transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), state);
-    } else {
-      // FIXME: Find a way that we don't have this hidden dependency.
-      assert(bi->getCondition() == bi->getOperand(0) &&
-             "Wrong operand index!");
-      ref<Expr> cond = eval(ki, 0, state).value;
-
-      cond = optimizer.optimizeExpr(cond, false);
-      Executor::StatePair branches = fork(state, cond, false);
-
-      //XXX: create hardware snapshot for the new states
-      if( !(branches.first == 0 || branches.second == 0) )
-        klee_message("forking execution state %p and %p", branches.first, branches.second);
-
-      // NOTE: There is a hidden dependency here, markBranchVisited
-      // requires that we still be in the context of the branch
-      // instruction (it reuses its statistic id). Should be cleaned
-      // up with convenient instruction specific data.
-      if (statsTracker && state.stack.back().kf->trackCoverage)
-        statsTracker->markBranchVisited(branches.first, branches.second);
-      
-      // we need to restore the current hw state
-      Target* target = get_active_target();
-
-      if (branches.first) {
-        if( update_hw_state(branches.first) )
-          target->restore(get_state_id(&state));
-        transferToBasicBlock(bi->getSuccessor(0), bi->getParent(), *branches.first); 
-      }
-      if (branches.second) {
-        if( update_hw_state(branches.second) )
-          target->restore(get_state_id(&state));
-        transferToBasicBlock(bi->getSuccessor(1), bi->getParent(), *branches.second); 
-      }
-
-    }
-    break;
-  }  
   default:
      Executor::executeInstruction(state, ki);
     break;
@@ -447,13 +403,13 @@ bool InceptionExecutor::update_hw_state(ExecutionState* state) {
 
   it = sw_to_hw.find(state);
   if(it == sw_to_hw.end()) {
-    klee_message("    creating new hw state for sw state %p", state);
+    // klee_message("    creating new hw state for sw state %p", state);
     // First time we create a snapshot for this state
     hw_id = target->save();
     sw_to_hw.insert(std::pair<ExecutionState*, uint32_t>(state, hw_id)); 
     return true;
   } else if( it->second == 0) {
-    klee_message("    updating existing hw state for sw state %p", state);
+    // klee_message("    updating existing hw state for sw state %p", state);
     hw_id = target->save();
     it->second = hw_id;
     return true;
@@ -600,9 +556,25 @@ void InceptionExecutor::initializeGlobals(ExecutionState &state) {
         } else {
           addr = externalDispatcher->resolveSymbol(i->getName());
         }
-        if (!addr)
-          klee_error("unable to load symbol(%s) while initializing globals.",
+        if (!addr) {
+          // Specific cases related to Inception:
+          // some symbols might be resolved during linking using the linker script data
+          // this is clearly the cleanest way to do so...
+
+          bool success = false;
+          auto symbol = resolve_elf_symbol_by_name(i->getName(), &success);
+          if(success) {
+            auto symbol_address = symbol.getAddress();
+            uint64_t device_address = symbol_address.get();
+            auto data = (unsigned int*)new unsigned int[mo->size];
+            data[0] = (unsigned int)device_address;
+            addr = data;
+            klee_message("mapping external object %s with value %016lx", i->getName().str().c_str(), device_address);
+          } else {
+            klee_error("unable to load symbol(%s) while initializing globals.",
                      i->getName().data());
+          }
+        }
 
         for (unsigned offset=0; offset<mo->size; offset++)
           os->write8(offset, ((unsigned char*)addr)[offset]);
@@ -790,6 +762,9 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
     const ObjectState *os = i->second;
     ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
 
+    //TODO: add resolution rules for pointers
+    //It is used to reduce the amount of states 
+
     StatePair branches = fork(*unbound, inBounds, true);
     ExecutionState *bound = branches.first;
 
@@ -819,7 +794,6 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
         it = forwarded_mem.find(mo->address);
         if (it != forwarded_mem.end()) {
           Target* device = it->second;
-
           ref<Expr> result = device->read(address, type);
 
           bindLocal(target, state, result);
@@ -840,6 +814,23 @@ void InceptionExecutor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
+      
+      klee_warning("Dumping call stack\n");
+      for(const auto& value: state.stack) {
+        klee_warning("%s", value.kf->function->getName().str().c_str());
+      }
+
+      if (const ConstantExpr *address_ce = dyn_cast<ConstantExpr>(address)) {
+        uint64_t concrete_address = address_ce->getZExtValue();
+
+        std::stringstream stream;
+        stream << "[MemFault] At address : 0x";
+        stream << std::hex << concrete_address;
+        std::string result( stream.str() );
+        klee::klee_warning("%s",result.c_str());
+      }
+
+      // klee::klee_warning("Out of bound at address %016x", address);
       terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
                             NULL, getAddressInfo(*unbound, address));
     }
@@ -1000,44 +991,60 @@ void InceptionExecutor::run(ExecutionState &initialState) {
 
   Target* target = get_active_target();
   instructions_counter = 0;
-  
-  while (!states.empty() && !haltExecution) {
-    uint32_t irq_id = 0;
-
-    bool active_interrupt = false;
-
-    //if( instructions_counter > 100 && target->has_pending_irq() ) {
-    if((interrupted_states.count(state) == 0) && target->has_pending_irq(get_state_id(state)) ) {
-      irq_id = target->get_active_irq(get_state_id(state));
-      active_interrupt = true;
-
-      if( irq_id != 0 ) {
-        klee_warning("pending irq 0x%08x", irq_id);
-        serve_pending_interrupt(state, irq_id);
-      }
-    }
-
-    if ( is_state_heuristic_enabled && ((state == NULL) || (active_interrupt == false)) ) {
-      ExecutionState* new_state = &(searcher->selectState());
-      if(state != new_state)
-        klee_warning("current state is %p with id %d", new_state, get_state_id(new_state));
-
-      sanitize_hw_state(state, new_state);
-      state = new_state;
-      
-    }
  
-    KInstruction *ki = state->pc;
-    stepInstruction(*state);
+  while (!states.empty() && !haltExecution) {
+    ExecutionState &state = searcher->selectState();
+    KInstruction *ki = state.pc;
+    stepInstruction(state);
 
-    executeInstruction(*state, ki);
-    //processTimers(&state, maxInstructionTime);
+    executeInstruction(state, ki);
+    timers.invoke();
 
-    checkMemoryUsage();
+    updateStates(&state);
 
-    updateStates(state);
-    instructions_counter++;
+    if (!checkMemoryUsage()) {
+      // update searchers when states were terminated early due to memory pressure
+      updateStates(nullptr);
+    }
   }
+
+
+
+  // while (!states.empty() && !haltExecution) {
+    // uint32_t irq_id = 0;
+//
+    // bool active_interrupt = false;
+//
+    // if((interrupted_states.count(state) == 0) && target->has_pending_irq(get_state_id(state)) ) {
+      // irq_id = target->get_active_irq(get_state_id(state));
+      // active_interrupt = true;
+//
+      // if( irq_id != 0 ) {
+        // klee_warning("pending irq 0x%08x", irq_id);
+        // serve_pending_interrupt(state, irq_id);
+      // }
+    // }
+//
+    // if ( is_state_heuristic_enabled && ((state == NULL) || (active_interrupt == false)) ) {
+      // ExecutionState* new_state = &(searcher->selectState());
+      // if(state != new_state)
+        // klee_warning("current state is %p with id %d", new_state, get_state_id(new_state));
+//
+      // sanitize_hw_state(state, new_state);
+      // state = new_state;
+//
+    // }
+//
+    // KInstruction *ki = state->pc;
+    // stepInstruction(*state);
+//
+    // executeInstruction(*state, ki);
+//
+    // checkMemoryUsage();
+//
+    // updateStates(state);
+    // instructions_counter++;
+  // }
 
   //while (!states.empty() && !haltExecution) {
   //  ExecutionState &state = searcher->selectState();
@@ -1073,7 +1080,7 @@ void InceptionExecutor::run(ExecutionState &initialState) {
   //}
 
   delete searcher;
-  searcher = 0;
+  searcher = nullptr;
 
   doDumpStates();
 }

@@ -72,7 +72,6 @@
 #include "target/openocd/openocd.hpp"
 #endif
 
-//#include "target/dummy/dummy.hpp"
 
 using namespace llvm;
 using namespace klee;
@@ -114,24 +113,7 @@ public:
 
   void add_target(std::string name, std::string type, std::string binary, std::string args, bool active);
 
-  void load_configuration(char **argv) {
-
-    std::string LibraryDir = KleeHandler::getRunTimeLibraryPath(argv[0]);
-    
-    std::string errorMsg;
-    LLVMContext ctx;
-
-    Interpreter::ModuleOptions Opts(LibraryDir.c_str(), "main", "32",
-                                  /*Optimize=*/true,
-                                  /*CheckDivZero=*/true,
-                                  /*CheckOvershift=*/true);
-
-    loadedModules.emplace_back(std::move(mainModule));
-
-    auto finalModule = interpreter->setModule(loadedModules, Opts);
-
-    mainModule = finalModule;
-  }
+  void load_configuration(char **argv);
 
   // load targets configuration
   void load_targets_conf_from_file(const char* _target_conf_file);

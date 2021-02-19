@@ -96,7 +96,7 @@ class InceptionExecutor : public Executor{
       if(target->is_active())
         return target;
     } 
-    klee_error("not active target");
+    klee_error("no active target");
   }
 
   uint32_t get_state_id(ExecutionState* state) {

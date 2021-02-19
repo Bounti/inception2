@@ -32,7 +32,7 @@ cl::opt<std::string> bitcode_file("bitcode", cl::desc("<input bitcode>"),
                                   cl::Required);
 
 cl::opt<std::string> elf_file("elf", cl::desc("<input ELF binary>"),
-                                  cl::Required);
+                                  cl::init(""));
 
 cl::opt<bool>
 enable_hw_snapshot("enable_hw_snapshot",
@@ -115,7 +115,9 @@ int main(int argc, char **argv) {
   inception->load_llvm_bitcode_from_file(bitcode_file.c_str());
 
   // 3. Load ELF binary
-  inception->load_elf_binary_from_file(elf_file.c_str());
+  if(elf_file.compare("") != 0) {
+    inception->load_elf_binary_from_file(elf_file.c_str());
+  }
 
   // 4. Run Inception Passes to lower assembly and binary dependencies in LLVM IR
   inception->runPasses();
